@@ -10,9 +10,9 @@ const TokenizeState = struct { rest: []const u8, current: ?Token };
 
 const ParseNodeType = enum { list, integerLiteral, symbol };
 
-const ListNode = struct { item: *ParseNode, rest: ?*@This() };
+pub const ListNode = struct { item: *ParseNode, rest: ?*@This() };
 
-const ParseNode = union(ParseNodeType) { list: ?*ListNode, integerLiteral: i64, symbol: []const u8 };
+pub const ParseNode = union(ParseNodeType) { list: ?*ListNode, integerLiteral: i64, symbol: []const u8 };
 
 const ParseState = struct { allocator: Allocator, tokenizer: TokenizeState };
 
