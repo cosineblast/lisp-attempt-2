@@ -4,7 +4,7 @@ const parser = @import("./parse.zig");
 
 pub fn main() !void {}
 
-test "complex test" {
+test "basic test" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();

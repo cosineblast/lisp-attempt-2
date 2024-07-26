@@ -216,11 +216,3 @@ pub fn showList(list: ?*ListNode, string: *ArrayList(u8)) error{OutOfMemory}!voi
     }
     try w.print(")", .{});
 }
-
-// expr = lit | symbol | list
-// list = '(' contents ')' | '(' ')'
-// contents = expr | expr contents
-
-// expr = ws lit | ws symbol | list
-// list = ws '(' contents ')' | ws '(' ws ')'
-// contents = expr | expr ws contents
