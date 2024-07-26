@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const parser = @import("./parse.zig");
-const vm = @import("./vm.zig");
+const rt = @import("./runtime.zig");
 
 pub fn main() !void {}
 
@@ -20,41 +20,41 @@ test "basic test" {
     try std.testing.expectEqualStrings("(123 (456 789) () neat)", string.items);
 }
 
-test "vm test" {
+test "rt test" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var b = vm.LambdaBuilder.init(allocator);
+    var b = rt.LambdaBuilder.init(allocator);
     const nah = b.addValue(.{ .boolean = false });
     const ten = b.addValue(.{ .integer = 10 });
     const twenty = b.addValue(.{ .integer = 20 });
 
-    try b.addInstruction(vm.Instruction{ .load = .{ .value = ten } });
-    try b.addInstruction(vm.Instruction{ .load = .{ .value = twenty } });
-    try b.addInstruction(vm.Instruction{ .load = .{ .value = nah } });
-    try b.addInstruction(vm.Instruction{ .jf = .{ .offset = 4 } });
-    try b.addInstruction(vm.Instruction{ .pick = .{ .offset = 1 } });
-    try b.addInstruction(vm.Instruction{ .rip = .{ .keep = 1, .drop = 2 } });
-    try b.addInstruction(vm.Instruction{ .jmp = .{ .offset = 1 } });
-    try b.addInstruction(vm.Instruction{ .rip = .{
+    try b.addInstruction(rt.Instruction{ .load = .{ .value = ten } });
+    try b.addInstruction(rt.Instruction{ .load = .{ .value = twenty } });
+    try b.addInstruction(rt.Instruction{ .load = .{ .value = nah } });
+    try b.addInstruction(rt.Instruction{ .jf = .{ .offset = 4 } });
+    try b.addInstruction(rt.Instruction{ .pick = .{ .offset = 1 } });
+    try b.addInstruction(rt.Instruction{ .rip = .{ .keep = 1, .drop = 2 } });
+    try b.addInstruction(rt.Instruction{ .jmp = .{ .offset = 1 } });
+    try b.addInstruction(rt.Instruction{ .rip = .{
         .drop = 1,
         .keep = 1,
     } });
-    try b.addInstruction(vm.Instruction.nop);
+    try b.addInstruction(rt.Instruction.nop);
 
     var lambda = b.build();
-    var frame: vm.Frame = undefined;
+    var frame: rt.Frame = undefined;
     frame.instruction_offset = 0;
     frame.function = &lambda;
 
-    vm.dump(&lambda);
+    rt.dump(&lambda);
 
-    var machine: vm.VM = undefined;
+    var machine: rt.VM = undefined;
     machine.allocator = allocator;
     machine.active_frame = frame;
-    machine.call_stack = std.ArrayList(vm.Frame).init(allocator);
-    machine.stack = std.ArrayList(vm.Value).init(allocator);
+    machine.call_stack = std.ArrayList(rt.Frame).init(allocator);
+    machine.stack = std.ArrayList(rt.Value).init(allocator);
 
     try machine.execute();
 
