@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const parser = @import("./parse.zig");
+const parsing = @import("./parsing.zig");
 const rt = @import("./runtime.zig");
 
 pub fn main() !void {}
@@ -13,9 +13,9 @@ test "basic test" {
     var string = std.ArrayList(u8).init(std.testing.allocator);
     defer string.deinit();
 
-    const result = parser.parse("(123 (456 789) () neat)", allocator) catch unreachable;
+    const result = parsing.parse("(123 (456 789) () neat)", allocator) catch unreachable;
 
-    try parser.show(result, &string);
+    try parsing.show(result, &string);
 
     try std.testing.expectEqualStrings("(123 (456 789) () neat)", string.items);
 }

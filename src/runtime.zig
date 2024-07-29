@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const parser = @import("parse.zig");
+const parsing = @import("parsing.zig");
 
 pub const InstructionType = enum {
     call,
