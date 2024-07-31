@@ -13,7 +13,7 @@
         devShells.default =
           pkgs.mkShell {
             buildInputs = [
-              pkgs.zig
+              pkgs.zig_0_12
               pkgs.zls
             ];
           };
