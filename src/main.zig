@@ -3,7 +3,34 @@ const std = @import("std");
 const parsing = @import("./parsing.zig");
 const rt = @import("./runtime.zig");
 
-pub fn main() !void {}
+const compilation = @import("compilation.zig");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const gpa_allocator = gpa.allocator();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const file = try std.fs.cwd().openFile("input.txt", .{});
+    defer file.close();
+
+    var result = std.ArrayList(u8).init(allocator);
+    try file.reader().readAllArrayList(&result, 4 * 1024 * 1024 * 1024);
+
+    const content = result.items;
+
+    const tree = try parsing.parse(content, allocator);
+
+    _ = try compilation.translate(tree, allocator);
+
+    std.debug.print("ok!\n", .{});
+}
+
+usingnamespace @import("compilation.zig");
 
 test "basic test" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -20,7 +47,7 @@ test "basic test" {
     try std.testing.expectEqualStrings("(123 (456 789) () neat)", string.items);
 }
 
-test "rt test" {
+test "basic instruction test" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();

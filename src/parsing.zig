@@ -8,9 +8,30 @@ const Token = union(TokenType) { openPar, closePar, integerLiteral: i64, symbol:
 
 const TokenizeState = struct { rest: []const u8, current: ?Token };
 
-const ParseNodeType = enum { list, integerLiteral, symbol };
+pub const ParseNodeType = enum { list, integerLiteral, symbol };
 
-pub const ListNode = struct { item: *ParseNode, rest: ?*@This() };
+pub const ListNode = struct {
+    const Self = @This();
+
+    item: *ParseNode,
+    rest: ?*Self,
+
+    pub fn nth(list: ?*Self, index: usize) ?*Self {
+        var result = list;
+
+        var i: usize = 0;
+
+        while (result) |result_| : (i += 1) {
+            if (i == index) {
+                return result;
+            }
+
+            result = result_.rest;
+        }
+
+        return result;
+    }
+};
 
 pub const ParseNode = union(ParseNodeType) { list: ?*ListNode, integerLiteral: i64, symbol: []const u8 };
 
@@ -109,7 +130,7 @@ fn nextSymbol(state: *TokenizeState) void {
     var symbol = state.rest;
     symbol.len = 0;
 
-    while (isSymbolCharacter(state.rest[0])) {
+    while (state.rest.len > 0 and isSymbolCharacter(state.rest[0])) {
         advanceChar(state);
         symbol.len += 1;
     }
