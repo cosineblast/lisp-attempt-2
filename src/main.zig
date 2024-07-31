@@ -30,22 +30,9 @@ pub fn main() !void {
     std.debug.print("ok!\n", .{});
 }
 
+usingnamespace @import("parsing.zig");
+
 usingnamespace @import("compilation.zig");
-
-test "basic test" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var string = std.ArrayList(u8).init(std.testing.allocator);
-    defer string.deinit();
-
-    const result = parsing.parse("(123 (456 789) () neat)", allocator) catch unreachable;
-
-    try parsing.show(result, &string);
-
-    try std.testing.expectEqualStrings("(123 (456 789) () neat)", string.items);
-}
 
 test "basic instruction test" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

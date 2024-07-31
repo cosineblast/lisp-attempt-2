@@ -6,7 +6,142 @@ const TokenType = enum { openPar, closePar, integerLiteral, symbol };
 
 const Token = union(TokenType) { openPar, closePar, integerLiteral: i64, symbol: []const u8 };
 
-const TokenizeState = struct { rest: []const u8, current: ?Token };
+const Tokenizer = struct {
+    next_char: union(enum) { uninitialized, eof, next: u8 },
+    next_token: union(enum) { uninitialized, eof, next: Token },
+    rest: []const u8,
+    allocator: Allocator,
+
+    fn shiftChar(state: *Tokenizer) void {
+        if (state.rest.len == 0) {
+            state.next_char = .eof;
+            return;
+        }
+        const value = state.rest[0];
+        state.rest.len -= 1;
+        state.rest.ptr += 1;
+        state.next_char = .{ .next = value };
+    }
+
+    fn peekChar(state: *Tokenizer) ?u8 {
+        if (state.next_char == .uninitialized) {
+            state.shiftChar();
+        }
+
+        if (state.next_char == .eof) {
+            return null;
+        }
+
+        const r = state.next_char.next;
+
+        return r;
+    }
+
+    fn shift(state: *Tokenizer) !void {
+        skipWhitespace(state);
+
+        const next = state.peekChar() orelse {
+            state.next_token = .eof;
+            return;
+        };
+
+        if (next == '(') {
+            state.next_token = .{ .next = Token.openPar };
+            state.shiftChar();
+        } else if (next == ')') {
+            state.next_token = .{ .next = Token.closePar };
+            state.shiftChar();
+        } else if (std.ascii.isDigit(next)) {
+            try state.shiftNumber();
+        } else if (isSymbolCharacter(next)) {
+            try state.shiftSymbol();
+        } else {
+            return error.UnknownChar;
+        }
+    }
+
+    fn shiftNumber(state: *Tokenizer) !void {
+        std.debug.assert(std.ascii.isDigit(state.next_char.next));
+
+        var content = std.ArrayList(u8).init(state.allocator);
+        defer content.deinit();
+
+        while (true) {
+            const next = state.peekChar() orelse break;
+
+            if (std.ascii.isDigit(next)) {
+                try content.append(next);
+                state.shiftChar();
+            } else {
+                break;
+            }
+        }
+
+        if (std.fmt.parseInt(i64, content.items, 10)) |parsed| {
+            state.next_token = .{ .next = .{ .integerLiteral = parsed } };
+        } else |issue| {
+            if (issue == std.fmt.ParseIntError.Overflow) {
+                return error.Overflow;
+            } else {
+                unreachable;
+            }
+        }
+    }
+
+    fn shiftSymbol(state: *Tokenizer) !void {
+        std.debug.assert(isSymbolCharacter(state.next_char.next));
+
+        var symbol = std.ArrayList(u8).init(state.allocator);
+        errdefer symbol.deinit();
+
+        while (true) {
+            const next = state.peekChar() orelse break;
+
+            if (isSymbolCharacter(next)) {
+                try symbol.append(next);
+                state.shiftChar();
+            } else {
+                break;
+            }
+        }
+
+        state.next_token = .{ .next = .{ .symbol = symbol.items } };
+    }
+
+    fn peek(state: *Tokenizer) !?Token {
+        if (state.next_token == .uninitialized) {
+            try state.shift();
+        }
+
+        if (state.next_token == .eof) {
+            return null;
+        }
+
+        return state.next_token.next;
+    }
+
+    fn peekOrFail(state: *Tokenizer) !Token {
+        return (try state.peek()) orelse return error.EOF;
+    }
+
+    fn skipWhitespace(state: *Tokenizer) void {
+        while (true) {
+            while (isWhitespace(state.peekChar() orelse return)) {
+                state.shiftChar();
+            }
+
+            if (state.peekChar() == ';') {
+                state.shiftChar();
+
+                while ((state.peekChar() orelse return) != '\n') {
+                    state.shiftChar();
+                }
+            } else {
+                break;
+            }
+        }
+    }
+};
 
 pub const ParseNodeType = enum { list, integerLiteral, symbol };
 
@@ -35,78 +170,9 @@ pub const ListNode = struct {
 
 pub const ParseNode = union(ParseNodeType) { list: ?*ListNode, integerLiteral: i64, symbol: []const u8 };
 
-const ParseState = struct { allocator: Allocator, tokenizer: TokenizeState };
+const ParseState = struct { allocator: Allocator, tokenizer: Tokenizer };
 
 const ArrayList = std.ArrayList;
-
-inline fn advanceChar(state: *TokenizeState) void {
-    state.rest.len -= 1;
-    state.rest.ptr += 1;
-}
-
-// zig issue:
-// when an error value doesn't belong to an error type, zig screams something on the lines of
-// src/parse.zig:45:22: error: expected type 'error{OutOfMemory,UnknownToken,EOF,UnmatchedClosePar}', found type 'error{TokenError}'
-// which could be a little bit more obvious, stating that the issue was that one of more errors, (in this case the TokenError error) is not in
-// the left set.
-fn advanceToken(state: *TokenizeState) ParseError!bool {
-    skipWhitespace(state);
-
-    if (state.rest.len == 0) {
-        state.current = null;
-        return false;
-    }
-
-    const next = state.rest[0];
-
-    if (next == '(') {
-        state.current = Token.openPar;
-        advanceChar(state);
-    } else if (next == ')') {
-        state.current = Token.closePar;
-        advanceChar(state);
-    } else if (std.ascii.isDigit(next)) {
-        nextNumber(state);
-    } else if (isSymbolCharacter(next)) {
-        nextSymbol(state);
-    } else {
-        return error.UnknownToken;
-    }
-
-    return true;
-}
-
-fn skipWhitespace(state: *TokenizeState) void {
-    while (state.rest.len > 0) {
-        while (state.rest.len > 0 and isWhitespace(state.rest[0])) {
-            advanceChar(state);
-        }
-
-        if (state.rest.len > 0 and state.rest[0] != ';') {
-            break;
-        }
-
-        while (state.rest.len > 0 and state.rest[0] != '\n') {
-            advanceChar(state);
-        }
-    }
-}
-
-fn nextNumber(state: *TokenizeState) void {
-    std.debug.assert(std.ascii.isDigit(state.rest[0]));
-
-    var slice = state.rest;
-    slice.len = 0;
-
-    while (state.rest.len > 0 and std.ascii.isDigit(state.rest[0])) {
-        advanceChar(state);
-        slice.len += 1;
-    }
-
-    const value: i64 = std.fmt.parseInt(i64, slice, 10) catch unreachable;
-
-    state.current = Token{ .integerLiteral = value };
-}
 
 fn isSymbolCharacter(char: u8) bool {
     if (std.ascii.isAlphanumeric(char)) {
@@ -124,50 +190,35 @@ fn isSymbolCharacter(char: u8) bool {
     return false;
 }
 
-fn nextSymbol(state: *TokenizeState) void {
-    std.debug.assert(std.ascii.isAlphabetic(state.rest[0]));
-
-    var symbol = state.rest;
-    symbol.len = 0;
-
-    while (state.rest.len > 0 and isSymbolCharacter(state.rest[0])) {
-        advanceChar(state);
-        symbol.len += 1;
-    }
-
-    state.current = .{ .symbol = symbol };
-}
-
 fn isWhitespace(x: u8) bool {
     return x == ' ' or x == '\t' or x == '\n';
 }
 
-const ParseError = error{ OutOfMemory, UnknownToken, EOF, UnmatchedClosePar };
+const ParseError = error{ OutOfMemory, UnknownChar, EOF, UnmatchedClosePar, Overflow };
 
 fn parseNode(state: *ParseState) ParseError!*ParseNode {
-    std.debug.assert(state.tokenizer.current != null);
+    const current = try state.tokenizer.peekOrFail();
 
-    const current = state.tokenizer.current orelse unreachable;
-    _ = try advanceToken(&state.tokenizer);
+    try state.tokenizer.shift();
 
     switch (current) {
         .symbol => |value| {
             const node = try state.allocator.create(ParseNode);
-            node.* = ParseNode{ .symbol = value };
+            node.* = .{ .symbol = value };
             return node;
         },
 
         .integerLiteral => |value| {
             const node = try state.allocator.create(ParseNode);
-            node.* = ParseNode{ .integerLiteral = value };
+            node.* = .{ .integerLiteral = value };
             return node;
         },
 
         .openPar => {
-            const list = try parseList(state);
+            const list = try parseRestOfList(state);
 
             const node = try state.allocator.create(ParseNode);
-            node.* = ParseNode{ .list = list };
+            node.* = .{ .list = list };
             return node;
         },
 
@@ -177,17 +228,17 @@ fn parseNode(state: *ParseState) ParseError!*ParseNode {
     }
 }
 
-fn parseList(state: *ParseState) ParseError!?*ListNode {
-    switch (state.tokenizer.current orelse unreachable) {
-        Token.closePar => {
-            _ = try advanceToken(&state.tokenizer);
+fn parseRestOfList(state: *ParseState) ParseError!?*ListNode {
+    switch (try state.tokenizer.peekOrFail()) {
+        .closePar => {
+            try state.tokenizer.shift();
             return null;
         },
 
         else => {
             const node = try state.allocator.create(ListNode);
             const item = try parseNode(state);
-            const rest = try parseList(state);
+            const rest = try parseRestOfList(state);
             node.* = ListNode{ .item = item, .rest = rest };
             return node;
         },
@@ -195,11 +246,7 @@ fn parseList(state: *ParseState) ParseError!?*ListNode {
 }
 
 pub fn parse(str: []const u8, allocator: Allocator) ParseError!*ParseNode {
-    var state = ParseState{ .allocator = allocator, .tokenizer = .{ .rest = str, .current = null } };
-
-    if (!try advanceToken(&state.tokenizer)) {
-        return error.EOF;
-    }
+    var state = ParseState{ .allocator = allocator, .tokenizer = .{ .rest = str, .allocator = allocator, .next_token = .uninitialized, .next_char = .uninitialized } };
 
     return parseNode(&state);
 }
@@ -236,4 +283,19 @@ pub fn showList(list: ?*ListNode, string: *ArrayList(u8)) error{OutOfMemory}!voi
         current = list_.rest;
     }
     try w.print(")", .{});
+}
+
+test "basic test" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var string = std.ArrayList(u8).init(std.testing.allocator);
+    defer string.deinit();
+
+    const result = parse("(123 (456 789) () neat)", allocator) catch unreachable;
+
+    try show(result, &string);
+
+    try std.testing.expectEqualStrings("(123 (456 789) () neat)", string.items);
 }
