@@ -15,7 +15,7 @@ pub const Expression = union(enum) {
     variable: []const u8,
     function_call: struct { name: *Expression, arguments: []*Expression },
     if_expresssion: struct { condition: *Expression, then_branch: *Expression, else_branch: *Expression },
-    bare_let: struct {
+    let_expression: struct {
         name: []const u8,
         value: *Expression,
         body: *Expression,
@@ -27,41 +27,14 @@ pub const Expression = union(enum) {
     begin_expression: []*Expression,
     nil,
 
-    pub fn deinit(self: *@This(), allocator: Allocator) void {
-        // TODO
-        switch (self.*) {
-            .function_call => |it| {
-                for (it.arguments) |arg| {
-                    arg.deinit(allocator);
-                }
-            },
-            .if_expresssion => |it| {
-                it.condition.deinit(allocator);
-                it.then_branch.deinit(allocator);
-                it.else_branch.deinit(allocator);
-            },
-            .bare_let => |it| {
-                it.value.deinit(allocator);
-                it.body.deinit(allocator);
-            },
-            .lambda => |it| {
-                it.body.deinit(allocator);
-            },
-            .true_expression => |it| {
-                it.body.deinit(allocator);
-            },
-            .false_expression => |it| {
-                _ = it;
-            },
-            .begin_expression => |it| {
-                _ = it;
-            },
-            .nil => |it| {
-                _ = it;
-            },
-        }
+    fn onHeap(value: Expression, allocator: Allocator) !*Expression {
+        const result = try allocator.create(Expression);
+        result.* = value;
+        return result;
     }
 };
+
+const ExpressionType = std.meta.Tag(Expression);
 
 const Traslation = struct {};
 
@@ -177,7 +150,7 @@ fn translateLet(node: *ParseNode, allocator: Allocator) TranslationError!*Expres
     const body_expr = try translate(body.item, allocator);
 
     const result = try allocator.create(Expression);
-    result.* = .{ .bare_let = .{ .name = name.item.symbol, .value = value_expr, .body = body_expr } };
+    result.* = .{ .let_expression = .{ .name = name.item.symbol, .value = value_expr, .body = body_expr } };
     return result;
 }
 
@@ -234,17 +207,33 @@ fn translateCall(node: *ParseNode, allocator: Allocator) TranslationError!*Expre
     return result;
 }
 
-test "translation works" {
+test "translation does not fail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
 
-    const tree = try parsing.parse("true", allocator);
+    const examples = [_]std.meta.Tuple(&.{ []const u8, ExpressionType }){
+        .{ "true", .true_expression }, //
+        .{ "false", .false_expression },
+        .{ "1", .integer },
+        .{ "123", .integer },
+        .{ "12345", .integer },
+        .{ "beep", .variable },
+        .{ "nil", .nil },
+        .{ "(begin (f 10) false)", .begin_expression },
+        .{ "(if true 1 2)", .if_expresssion },
+        .{ "(((f 10) 20) 30)", .function_call },
+        .{ "(let x 10 (+ x 10))", .let_expression },
+        .{ "(lambda (x y z) (+ x y z))", .lambda },
+    };
 
-    const translated = try translate(tree, allocator);
+    for (examples) |example| {
+        const tree = try parsing.parse(example.@"0", allocator);
+        const result = try translate(tree, allocator);
 
-    try std.testing.expectEqual(.true_expression, translated.*);
+        const result_type: ExpressionType = result.*;
 
-    _ = try allocator.create(i32);
+        try std.testing.expectEqual(example.@"1", result_type);
+    }
 }
