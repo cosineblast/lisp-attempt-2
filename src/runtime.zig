@@ -49,8 +49,9 @@ pub const InstructionType = enum {
 // tcall map
 //
 pub const Instruction = union(InstructionType) {
-    call: struct { args: u8, target: u8 },
-    tcall: struct { args: u8, target: u8 },
+    // TODO: replace single u8 structs with actual u8s
+    call: struct { arg_count: u8 },
+    tcall: struct { arg_count: u8 },
     pick: struct { offset: u8 },
     jf: struct { offset: u8 },
     jmp: struct { offset: u8 },
@@ -156,19 +157,17 @@ pub const VM = struct {
                     self.stack.items.len -= drop;
                 },
                 .call => |info| {
-                    std.debug.print("> call <>\n", .{});
+                    std.debug.print("> call\n", .{});
 
-                    self.active_frame.instruction_offset = instruction_offset;
+                    const fn_value = self.stack.pop();
 
-                    const value = self.active_frame.function.values[info.target];
-
-                    switch (value) {
+                    switch (fn_value) {
                         .real_function => |function| {
-                            function(self, info.args);
+                            function(self, info.arg_count);
                         },
 
                         .lambda => |lambda| {
-                            if (lambda.parameter_count != null and lambda.parameter_count != info.args) {
+                            if (lambda.parameter_count != null and lambda.parameter_count != info.arg_count) {
                                 return error.MismatchedCall;
                             }
 
@@ -266,7 +265,7 @@ pub fn dump(lambda: *const BytecodeLambda) void {
                 std.debug.print("    (rip {} {})\n", .{ info.drop, info.keep });
             },
             .call => |info| {
-                std.debug.print("    (call {}/{?})\n", .{ info.target, info.args });
+                std.debug.print("    (call {?})\n", .{info.arg_count});
             },
             .tcall => {
                 // TODO
