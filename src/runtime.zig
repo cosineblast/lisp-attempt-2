@@ -204,6 +204,9 @@ pub const VM = struct {
 };
 
 pub const LambdaBuilder = struct {
+    // The current implementation of this interpreter uses an array of tagged unions to store the instructions,
+    // but in the future, that may be replaced by a serialized array of bytes.
+    // The API of this module tries to be agnostic to which of these is utilized.
     const Self = @This();
 
     code: std.ArrayList(Instruction),
@@ -217,6 +220,30 @@ pub const LambdaBuilder = struct {
 
     pub fn addInstruction(self: *Self, instruction: Instruction) !void {
         try self.code.append(instruction);
+    }
+
+    // The number of instructions inserted so far in this function
+    pub fn insertedSoFar(self: *Self) usize {
+        return self.code.items.len;
+    }
+
+    /// Returns an unsigned integer that represents the index of beginning of the next instruction to
+    /// be inserted. As of now, there are no guarantees on the semantics of addition or subtraction
+    /// with this given offset (the implementation can be based on arrays of tagged unions, or
+    /// byte arrays), but it is guaranteed that this index can be used with setInstruction
+    pub fn nextOffset(self: *Self) usize {
+        return self.code.items.len;
+    }
+
+    /// Modifies the inserted code, to set the given instruction at the given offset.
+    /// It is invalid (altough not necessarily detectable) to use this operation with an offset
+    /// that was not returned by nextOffset, nor to use it to override an existing instruction
+    /// with another instruction of different serialized-byte-size.
+    pub fn setInstruction(self: *Self, offset: usize, instruction: Instruction) void {
+        std.debug.assert(offset < self.code.items.len);
+        std.debug.assert(@as(InstructionType, instruction) == @as(InstructionType, self.code.items[offset]));
+
+        self.code.items[offset] = instruction;
     }
 
     pub fn addValue(self: *Self, value: Value) u8 {
