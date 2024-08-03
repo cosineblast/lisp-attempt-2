@@ -418,7 +418,6 @@ pub const Compilation = struct { //
         try self.compileExpression(call.name);
 
         try self.lambda_builder.addInstruction(.{ .call = .{ .arg_count = @intCast(call.arguments.len) } });
-
     }
 
     fn compileIfExpression(self: *Self, value: Expression.If) Error!void {
@@ -552,12 +551,16 @@ test "translation does not fail" {
     };
 
     for (examples) |example| {
-        const tree = try parsing.parse(example.@"0", allocator);
+        const str = example.@"0";
+
+        const tree = try parsing.parse(str, allocator);
         const result = try translate(tree, allocator);
 
         const result_type: ExpressionType = result.*;
 
         try std.testing.expectEqual(example.@"1", result_type);
+
+        std.debug.print("\n{s} -> {any}\n", .{ str, result });
     }
 }
 
@@ -567,7 +570,7 @@ test "compilation does not fail" {
 
     const allocator = arena.allocator();
 
-    const tree = try parsing.parse("(if false 1 2)", allocator);
+    const tree = try parsing.parse("(let x (begin 10 (if false 1 (lambda (y) y))) x)", allocator);
 
     const expr = try translate(tree, allocator);
 
