@@ -73,14 +73,28 @@ pub const ValueType = enum {
 
 pub const ListObject = struct { item: Value, next: ?*ListObject };
 
-pub const BytecodeLambda = struct {
-    code: []Instruction,
+pub const LambdaBody = struct { //
+    code: []Instruction, //
     values: [256]Value,
     value_count: usize,
     parameter_count: ?u8,
+    other_bodies: [256]*LambdaBody,
+    other_body_count: usize,
 };
 
-pub const Value = union(ValueType) { nil, list: *ListObject, integer: i64, boolean: bool, lambda: *BytecodeLambda, real_function: *const fn (state: *VM, count: u8) void };
+pub const BytecodeLambda = struct {
+    body: *LambdaBody,
+    context: []Value,
+};
+
+pub const Value = union(ValueType) {
+    nil, //
+    list: *ListObject,
+    integer: i64,
+    boolean: bool,
+    lambda: *BytecodeLambda,
+    real_function: *const fn (state: *VM, count: u8) void,
+};
 
 pub const Frame = struct { function: *BytecodeLambda, instruction_offset: usize };
 
@@ -92,12 +106,12 @@ pub const VM = struct {
 
     pub fn execute(self: *VM) !void {
         var instruction_offset = self.active_frame.instruction_offset;
-        const limit = self.active_frame.function.code.len;
+        const limit = self.active_frame.function.body.code.len;
 
         defer self.active_frame.instruction_offset = instruction_offset;
 
         while (instruction_offset < limit) {
-            const instruction = self.active_frame.function.code[instruction_offset];
+            const instruction = self.active_frame.function.body.code[instruction_offset];
 
             switch (instruction) {
                 .pick => |offset| {
@@ -129,7 +143,7 @@ pub const VM = struct {
                 },
                 .load => |id| {
                     std.debug.print("> load {}\n", .{id.value});
-                    try self.stack.append(self.active_frame.function.values[id.value]);
+                    try self.stack.append(self.active_frame.function.body.values[id.value]);
                 },
                 .loadf => {
                     // TODO
@@ -167,7 +181,7 @@ pub const VM = struct {
                         },
 
                         .lambda => |lambda| {
-                            if (lambda.parameter_count != null and lambda.parameter_count != info.arg_count) {
+                            if (lambda.body.parameter_count != null and lambda.body.parameter_count != info.arg_count) {
                                 return error.MismatchedCall;
                             }
 
@@ -175,6 +189,10 @@ pub const VM = struct {
 
                             self.active_frame.function = lambda;
                             self.active_frame.instruction_offset = 0;
+
+                            for (lambda.context) |value| {
+                                try self.stack.append(value);
+                            }
 
                             continue;
                         },
@@ -211,11 +229,20 @@ pub const LambdaBuilder = struct {
 
     code: std.ArrayList(Instruction),
     values: [256]Value,
+    other_bodies: [256]*LambdaBody,
     next_value_index: u8,
+    next_body_index: u8,
     parameter_count: ?u8,
 
     pub fn init(allocator: std.mem.Allocator) Self {
-        return LambdaBuilder{ .code = std.ArrayList(Instruction).init(allocator), .values = undefined, .next_value_index = 0, .parameter_count = 0 };
+        return LambdaBuilder{ //
+            .code = std.ArrayList(Instruction).init(allocator),
+            .values = undefined,
+            .other_bodies = undefined,
+            .next_value_index = 0,
+            .parameter_count = 0,
+            .next_body_index = 0,
+        };
     }
 
     pub fn addInstruction(self: *Self, instruction: Instruction) !void {
@@ -253,6 +280,13 @@ pub const LambdaBuilder = struct {
         return current;
     }
 
+    pub fn addBodyReference(self: *Self, body: *LambdaBody) u8 {
+        const current = self.next_body_index;
+        self.other_bodies[current] = body;
+        self.next_body_index += 1;
+        return current;
+    }
+
     pub fn setVariadic(self: *Self) void {
         self.parameter_count = null;
     }
@@ -261,12 +295,19 @@ pub const LambdaBuilder = struct {
         self.parameter_count = count;
     }
 
-    pub fn build(self: *Self) BytecodeLambda {
-        return BytecodeLambda{ .parameter_count = self.parameter_count, .values = self.values, .code = self.code.items, .value_count = self.next_value_index };
+    pub fn build(self: *Self) LambdaBody {
+        return LambdaBody{ //
+            .parameter_count = self.parameter_count,
+            .values = self.values,
+            .code = self.code.items,
+            .value_count = self.next_value_index,
+            .other_bodies = self.other_bodies,
+            .other_body_count = self.next_body_index,
+        };
     }
 };
 
-pub fn dump(lambda: *const BytecodeLambda) void {
+pub fn dump(lambda: *const LambdaBody) void {
     std.debug.print("(function\n", .{});
     std.debug.print("  (parcount {?})\n", .{lambda.parameter_count});
     std.debug.print("  (code\n", .{});

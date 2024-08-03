@@ -10,6 +10,8 @@ const ParseNodeType = parsing.ParseNodeType;
 
 const rt = @import("runtime.zig");
 
+const Tuple = std.meta.Tuple;
+
 pub const Expression = union(enum) {
     const Call = struct { name: *Expression, arguments: []*Expression };
     const If = struct { condition: *Expression, then_branch: *Expression, else_branch: *Expression };
@@ -19,12 +21,14 @@ pub const Expression = union(enum) {
         body: *Expression,
     };
 
+    const Lambda = struct { parameters: [][]const u8, body: *Expression };
+
     integer: i64, //
     variable: []const u8,
     function_call: Call,
     if_expresssion: If,
     let_expression: Let,
-    lambda: struct { parameters: [][]const u8, body: *Expression },
+    lambda: Lambda,
     true_expression,
     false_expression,
 
@@ -211,6 +215,63 @@ fn translateCall(node: *ParseNode, allocator: Allocator) TranslationError!*Expre
     return result;
 }
 
+const analysis = struct {
+    const Error = error{OutOfMemory};
+
+    fn findFreeVariables(expr: *Expression, bound: *ArrayList([]const u8), free: *ArrayList([]const u8)) Error!void {
+        switch (expr.*) {
+            .variable => |name| {
+                var found: bool = false;
+                for (bound.items) |item| {
+                    if (std.mem.eql(u8, item, name)) {
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    try free.append(name);
+                }
+            },
+            .function_call => |call| {
+                try findFreeVariables(call.name, bound, free);
+
+                for (call.arguments) |item| {
+                    try findFreeVariables(item, bound, free);
+                }
+            },
+            .if_expresssion => |if_expr| {
+                try findFreeVariables(if_expr.condition, bound, free);
+                try findFreeVariables(if_expr.then_branch, bound, free);
+                try findFreeVariables(if_expr.else_branch, bound, free);
+            },
+            .let_expression => |let_expr| {
+                try findFreeVariables(let_expr.value, bound, free);
+                try bound.append(let_expr.name);
+                try findFreeVariables(let_expr.body, bound, free);
+                _ = bound.pop();
+            },
+            .lambda => |lambda_expr| {
+                for (lambda_expr.parameters) |parameter| {
+                    try bound.append(parameter);
+                }
+                try findFreeVariables(lambda_expr.body, bound, free);
+
+                for (0..lambda_expr.parameters.len) |_| {
+                    _ = bound.pop();
+                }
+            },
+            .begin_expression => |expressions| {
+                for (expressions) |item| {
+                    try findFreeVariables(item, bound, free);
+                }
+            },
+            .integer => {},
+            .true_expression => {},
+            .false_expression => {},
+            .nil => {},
+        }
+    }
+};
+
 pub const Compilation = struct { //
     const Self = @This();
 
@@ -269,8 +330,9 @@ pub const Compilation = struct { //
             .let_expression => |value| {
                 try self.compileLetExpression(value);
             },
-            .lambda => |value| {
-                _ = value;
+            .lambda => |lambda_expr| {
+                try self.compileLambdaExpression(lambda_expr);
+
                 unreachable;
             },
             .begin_expression => |expressions| {
@@ -317,27 +379,37 @@ pub const Compilation = struct { //
     }
 
     fn compileVariable(self: *Self, value: []const u8) Error!void {
-        var i: usize = self.local_bindings.items.len;
-
-        var lookup_frame_offset: ?usize = null;
-
-        while (i > 0) {
-            i -= 1;
-
-            if (std.mem.eql(u8, self.local_bindings.items[i].name, value)) {
-                lookup_frame_offset = self.local_bindings.items[i].frame_offset;
-            }
-        }
+        const lookup_frame_offset = self.lookupLocal(value);
 
         const frame_offset = lookup_frame_offset orelse {
             self.issue = .{ .UnkownVariable = value };
             return;
         };
 
-        const stack_offset = self.frame_size - frame_offset - 1;
+        const stack_offset = self.computeStackOffset(frame_offset);
 
         try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(stack_offset) } });
         self.frame_size += 1;
+    }
+
+    fn computeStackOffset(self: *Self, frame_offset: usize) usize {
+        return self.frame_size - frame_offset - 1;
+    }
+
+    fn lookupLocal(self: *Self, name: []const u8) ?usize {
+        var result: ?usize = 0;
+
+        var i = self.local_bindings.items.len;
+
+        while (i > 0) {
+            i -= 1;
+
+            if (std.mem.eql(u8, self.local_bindings.items[i].name, name)) {
+                result = self.local_bindings.items[i].frame_offset;
+            }
+        }
+
+        return result;
     }
 
     fn compileFunctionCall(self: *Self, call: Expression.Call) Error!void {
@@ -403,6 +475,64 @@ pub const Compilation = struct { //
         try self.lambda_builder.addInstruction(.{ .load = .{ .value = id } });
 
         self.frame_size += 1;
+    }
+
+    fn compileLambdaExpression(self: *Self, expr: Expression.Lambda) Error!void {
+        var bindings = ArrayList(Binding).init(self.allocator);
+        defer bindings.deinit();
+
+        for (expr.parameters) |parameter| {
+            try bindings.append(.{ .name = parameter, .frame_offset = bindings.items.len });
+        }
+
+        var bound = ArrayList([]const u8).init(self.allocator);
+        defer bound.deinit();
+
+        var free = ArrayList([]const u8).init(self.allocator);
+        defer bound.deinit();
+
+        try analysis.findFreeVariables(expr.body, &bound, &free);
+
+        var context_length: usize = 0;
+
+        for (free.items) |item| {
+            if (self.lookupLocal(item)) |offset| {
+                try bindings.append(.{ .name = item, .frame_offset = bindings.items.len });
+
+                try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(self.computeStackOffset(offset)) } });
+
+                context_length += 1;
+            }
+        }
+
+        var next = Compilation{
+            .allocator = self.allocator,
+            .lambda_builder = rt.LambdaBuilder.init(self.allocator),
+            .frame_size = bindings.items.len,
+            .local_bindings = bindings,
+            .integer_literals = ArrayList(IntRefPair).init(self.allocator),
+            .true_literal_ref = null,
+            .false_literal_ref = null,
+            .nil_literal_ref = null,
+            .issue = null,
+        };
+
+        try next.compileLambdaBody(expr.body);
+
+        const body = next.lambda_builder.build();
+
+        const bodyReference = try self.allocator.create(rt.LambdaBody);
+        bodyReference.* = body;
+
+        const id = self.lambda_builder.addBodyReference(bodyReference);
+
+        try self.lambda_builder.addInstruction(.{ .loadf = .{ .in_context = @intCast(context_length), .value = id } });
+    }
+
+    fn compileLambdaBody(self: *Self, expression: *Expression) Error!void {
+        try self.compileExpression(expression);
+
+        try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(self.frame_size - 1), .keep = 1 } });
     }
 };
 

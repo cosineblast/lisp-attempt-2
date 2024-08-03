@@ -57,12 +57,15 @@ test "basic instruction test" {
     } });
     try b.addInstruction(rt.Instruction.nop);
 
-    var lambda = b.build();
+    var lambda_body = b.build();
+    var lambda: rt.BytecodeLambda = undefined;
+    lambda.context = &.{};
+    lambda.body = &lambda_body;
     var frame: rt.Frame = undefined;
     frame.instruction_offset = 0;
     frame.function = &lambda;
 
-    rt.dump(&lambda);
+    rt.dump(lambda.body);
 
     var machine: rt.VM = undefined;
     machine.allocator = allocator;
