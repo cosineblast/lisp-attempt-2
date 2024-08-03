@@ -215,6 +215,10 @@ fn translateCall(node: *ParseNode, allocator: Allocator) TranslationError!*Expre
     return result;
 }
 
+fn showExpression(expression: *Expression, out: *ArrayList(u8)) !void {
+    try std.json.stringify(expression.*, .{}, out.writer());
+}
+
 const analysis = struct {
     const Error = error{OutOfMemory};
 
@@ -560,7 +564,12 @@ test "translation does not fail" {
 
         try std.testing.expectEqual(example.@"1", result_type);
 
-        std.debug.print("\n{s} -> {any}\n", .{ str, result });
+        var arr = std.ArrayList(u8).init(std.testing.allocator);
+        defer arr.deinit();
+
+        try showExpression(result, &arr);
+
+        std.debug.print("{s} -> {s}\n", .{ str, arr.items });
     }
 }
 
