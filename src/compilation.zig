@@ -314,6 +314,8 @@ pub const Compilation = struct { //
     // they will insert code which when ran, will add a single value to the stack
     // which corresponds to the value of the expression in the source
     pub fn compileExpression(self: *Self, expression: *Expression) Error!void {
+        const before = self.frame_size;
+
         switch (expression.*) {
             .integer => |value| {
                 try self.compileIntegerLiteral(value);
@@ -332,15 +334,12 @@ pub const Compilation = struct { //
             },
             .lambda => |lambda_expr| {
                 try self.compileLambdaExpression(lambda_expr);
-
-                unreachable;
             },
             .begin_expression => |expressions| {
                 for (expressions) |item| {
                     try self.compileExpression(item);
                 }
                 try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(expressions.len), .keep = 0 } });
-                self.frame_size += 1;
             },
             .true_expression => {
                 try self.compileSingleton(&self.true_literal_ref, .{ .boolean = true });
@@ -352,6 +351,8 @@ pub const Compilation = struct { //
                 try self.compileSingleton(&self.false_literal_ref, .nil);
             },
         }
+
+        self.frame_size = before + 1;
     }
 
     fn compileIntegerLiteral(self: *Self, value: i64) Error!void {
@@ -374,8 +375,6 @@ pub const Compilation = struct { //
         try self.lambda_builder.addInstruction(.{ //
             .load = .{ .value = ref.? },
         });
-
-        self.frame_size += 1;
     }
 
     fn compileVariable(self: *Self, value: []const u8) Error!void {
@@ -389,7 +388,6 @@ pub const Compilation = struct { //
         const stack_offset = self.computeStackOffset(frame_offset);
 
         try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(stack_offset) } });
-        self.frame_size += 1;
     }
 
     fn computeStackOffset(self: *Self, frame_offset: usize) usize {
@@ -421,7 +419,6 @@ pub const Compilation = struct { //
 
         try self.lambda_builder.addInstruction(.{ .call = .{ .arg_count = @intCast(call.arguments.len) } });
 
-        self.frame_size += 1;
     }
 
     fn compileIfExpression(self: *Self, value: Expression.If) Error!void {
@@ -457,8 +454,6 @@ pub const Compilation = struct { //
         try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = 1, .keep = 1 } });
 
         _ = self.local_bindings.pop();
-
-        self.frame_size += 1;
     }
 
     fn compileSingleton(self: *Self, id_ptr: *?u8, value: rt.Value) Error!void {
@@ -473,8 +468,6 @@ pub const Compilation = struct { //
         };
 
         try self.lambda_builder.addInstruction(.{ .load = .{ .value = id } });
-
-        self.frame_size += 1;
     }
 
     fn compileLambdaExpression(self: *Self, expr: Expression.Lambda) Error!void {
