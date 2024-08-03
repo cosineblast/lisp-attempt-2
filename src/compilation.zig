@@ -215,7 +215,7 @@ fn translateCall(node: *ParseNode, allocator: Allocator) TranslationError!*Expre
     return result;
 }
 
-fn showExpression(expression: *Expression, out: *ArrayList(u8)) !void {
+pub fn showExpression(expression: *Expression, out: *ArrayList(u8)) !void {
     try std.json.stringify(expression.*, .{}, out.writer());
 }
 
@@ -312,6 +312,11 @@ pub const Compilation = struct { //
             .nil_literal_ref = null,
             .issue = null,
         };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.local_bindings.deinit();
+        self.integer_literals.deinit();
     }
 
     // The expected behavior of all compile functions, is that
@@ -513,14 +518,13 @@ pub const Compilation = struct { //
             .issue = null,
         };
 
+        defer next.deinit();
+
         try next.compileLambdaBody(expr.body);
 
-        const body = next.lambda_builder.build();
+        const body = try next.lambda_builder.buildOnHeap();
 
-        const bodyReference = try self.allocator.create(rt.LambdaBody);
-        bodyReference.* = body;
-
-        const id = self.lambda_builder.addBodyReference(bodyReference);
+        const id = self.lambda_builder.addBodyReference(body);
 
         try self.lambda_builder.addInstruction(.{ .loadf = .{ .in_context = @intCast(context_length), .value = id } });
     }

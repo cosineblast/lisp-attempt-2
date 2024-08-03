@@ -74,12 +74,24 @@ pub const ValueType = enum {
 pub const ListObject = struct { item: Value, next: ?*ListObject };
 
 pub const LambdaBody = struct { //
-    code: []Instruction, //
+    code: std.ArrayListUnmanaged(Instruction), //
     values: [256]Value,
     value_count: usize,
     parameter_count: ?u8,
     other_bodies: [256]*LambdaBody,
     other_body_count: usize,
+    ref_count: usize = 1,
+
+    pub fn down(body: *LambdaBody, allocator: std.mem.Allocator) void {
+        std.debug.assert(body.ref_count > 0);
+
+        if (body.ref_count == 1) {
+            body.code.deinit(allocator);
+            allocator.destroy(body);
+        } else {
+            body.ref_count -= 1;
+        }
+    }
 };
 
 pub const BytecodeLambda = struct {
@@ -106,12 +118,12 @@ pub const VM = struct {
 
     pub fn execute(self: *VM) !void {
         var instruction_offset = self.active_frame.instruction_offset;
-        const limit = self.active_frame.function.body.code.len;
+        const limit = self.active_frame.function.body.code.items.len;
 
         defer self.active_frame.instruction_offset = instruction_offset;
 
         while (instruction_offset < limit) {
-            const instruction = self.active_frame.function.body.code[instruction_offset];
+            const instruction = self.active_frame.function.body.code.items[instruction_offset];
 
             switch (instruction) {
                 .pick => |offset| {
@@ -299,11 +311,17 @@ pub const LambdaBuilder = struct {
         return LambdaBody{ //
             .parameter_count = self.parameter_count,
             .values = self.values,
-            .code = self.code.items,
+            .code = self.code.moveToUnmanaged(),
             .value_count = self.next_value_index,
             .other_bodies = self.other_bodies,
             .other_body_count = self.next_body_index,
         };
+    }
+
+    pub fn buildOnHeap(self: *Self) !*LambdaBody {
+        const result = try self.code.allocator.create(LambdaBody);
+        result.* = self.build();
+        return result;
     }
 };
 
@@ -312,7 +330,7 @@ pub fn dump(lambda: *const LambdaBody) void {
     std.debug.print("  (parcount {?})\n", .{lambda.parameter_count});
     std.debug.print("  (code\n", .{});
 
-    for (lambda.code) |instruction| {
+    for (lambda.code.items) |instruction| {
         switch (instruction) {
             .pick => |offset| {
                 std.debug.print("    (pick {})\n", .{offset.offset});
