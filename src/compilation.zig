@@ -125,7 +125,7 @@ fn translateIf(node: *ParseNode, allocator: Allocator) TranslationError!*Express
 fn translateBegin(node: *ParseNode, allocator: Allocator) TranslationError!*Expression {
     const list = node.list;
 
-    var current = list;
+    var current = parsing.ListNode.nth(list, 1);
 
     var expressions = std.ArrayList(*Expression).init(allocator);
 
@@ -526,6 +526,7 @@ pub const Compilation = struct { //
         try self.compileExpression(expression);
 
         try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(self.frame_size - 1), .keep = 1 } });
+        try self.lambda_builder.addInstruction(.ret);
     }
 };
 
