@@ -403,3 +403,47 @@ fn print_value(value: *const Value) void {
         },
     }
 }
+
+test "basic instruction test" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var b = LambdaBuilder.init(allocator);
+    const nah = b.addValue(.{ .boolean = false });
+    const ten = b.addValue(.{ .integer = 10 });
+    const twenty = b.addValue(.{ .integer = 20 });
+
+    try b.addInstruction(Instruction{ .load = .{ .value = ten } });
+    try b.addInstruction(Instruction{ .load = .{ .value = twenty } });
+    try b.addInstruction(Instruction{ .load = .{ .value = nah } });
+    try b.addInstruction(Instruction{ .jf = .{ .offset = 4 } });
+    try b.addInstruction(Instruction{ .pick = .{ .offset = 1 } });
+    try b.addInstruction(Instruction{ .rip = .{ .keep = 1, .drop = 2 } });
+    try b.addInstruction(Instruction{ .jmp = .{ .offset = 1 } });
+    try b.addInstruction(Instruction{ .rip = .{
+        .drop = 1,
+        .keep = 1,
+    } });
+    try b.addInstruction(Instruction.nop);
+
+    var lambda_body = b.build();
+    var lambda: BytecodeLambda = undefined;
+    lambda.context = &.{};
+    lambda.body = &lambda_body;
+    var frame: Frame = undefined;
+    frame.instruction_offset = 0;
+    frame.function = &lambda;
+
+    dump(lambda.body);
+
+    var machine: VM = undefined;
+    machine.allocator = allocator;
+    machine.active_frame = frame;
+    machine.call_stack = std.ArrayList(Frame).init(allocator);
+    machine.stack = std.ArrayList(Value).init(allocator);
+
+    try machine.execute();
+
+    try std.testing.expectEqual(20, machine.stack.items[0].integer);
+}
