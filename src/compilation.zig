@@ -404,7 +404,7 @@ pub const Compilation = struct { //
     }
 
     fn lookupLocal(self: *Self, name: []const u8) ?usize {
-        var result: ?usize = 0;
+        var result: ?usize = null;
 
         var i = self.local_bindings.items.len;
 
@@ -439,7 +439,9 @@ pub const Compilation = struct { //
         try self.compileExpression(value.then_branch);
         const after_then = self.lambda_builder.insertedSoFar();
 
-        self.lambda_builder.setInstruction(jf_index, .{ .jf = .{ .offset = @intCast(1 + after_then - before_then) } });
+        // it would naturally be +1 due to zero-based indexing,
+        // but there is also the jmp so it is +2
+        self.lambda_builder.setInstruction(jf_index, .{ .jf = .{ .offset = @intCast(2 + after_then - before_then) } });
 
         const jmp_index = self.lambda_builder.nextOffset();
         try self.lambda_builder.addInstruction(.{ .jmp = .{ .offset = 0 } });
@@ -480,7 +482,6 @@ pub const Compilation = struct { //
 
     fn compileLambdaExpression(self: *Self, expr: Expression.Lambda) Error!void {
         var bindings = ArrayList(Binding).init(self.allocator);
-        defer bindings.deinit();
 
         for (expr.parameters) |parameter| {
             try bindings.append(.{ .name = parameter, .frame_offset = bindings.items.len });
