@@ -340,6 +340,14 @@ pub fn dump(lambda: *const LambdaBody) void {
     }
 
     std.debug.print("{s}\n", .{arr.items});
+
+    std.debug.print("immediate table:\n", .{});
+
+    for (0..lambda.value_count) |i| {
+        std.debug.print("{}: ", .{i});
+        print_value(&lambda.values[i]);
+        std.debug.print("\n", .{});
+    }
 }
 
 fn print_value(value: *const Value) void {

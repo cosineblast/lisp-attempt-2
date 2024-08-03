@@ -18,30 +18,45 @@ pub fn main() !void {
     const stdin = std.io.getStdIn();
     var reader = stdin.reader();
 
-    const tree = try parsing.parseFromReader(reader.any(), allocator);
+    std.debug.print("lisp attempt 2\n", .{});
 
-    std.debug.print("read ok!\n", .{});
+    while (true) {
+        std.debug.print("\n> ", .{});
+        const tree = parsing.parseFromReader(reader.any(), allocator) catch |e| {
+            if (e == error.EOF) {
+                break;
+            } else {
+                return e;
+            }
+        };
 
-    const expr = try compilation.translate(tree, allocator);
+        std.debug.print("read ok!\n", .{});
 
-    std.debug.print("translate ok!\n", .{});
+        const expr = try compilation.translate(tree, allocator);
 
-    var arr = std.ArrayList(u8).init(base_allocator);
-    defer arr.deinit();
+        std.debug.print("translate ok!\n", .{});
 
-    try compilation.showExpression(expr, &arr);
+        var arr = std.ArrayList(u8).init(base_allocator);
+        defer arr.deinit();
 
-    std.debug.print("translation:\n{s}\n", .{arr.items});
+        try compilation.showExpression(expr, &arr);
 
-    var compiler = compilation.Compilation.init(base_allocator);
-    defer compiler.deinit();
+        std.debug.print("translation:\n{s}\n", .{arr.items});
 
-    try compiler.compileExpression(expr);
+        var compiler = compilation.Compilation.init(base_allocator);
+        defer compiler.deinit();
 
-    var body = try compiler.lambda_builder.buildOnHeap();
-    defer body.down(base_allocator);
+        try compiler.compileExpression(expr);
 
-    std.debug.print("compile ok!\n", .{});
+        var body = try compiler.lambda_builder.buildOnHeap();
+        defer body.down(base_allocator);
+
+        std.debug.print("compile ok!\n", .{});
+
+        std.debug.print("Lambda Body:\n", .{});
+
+        rt.dump(body);
+    }
 }
 
 usingnamespace @import("parsing.zig");
