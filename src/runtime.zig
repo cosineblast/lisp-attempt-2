@@ -52,6 +52,9 @@ pub const LambdaBody = struct { //
         std.debug.assert(body.ref_count > 0);
 
         if (body.ref_count == 1) {
+            for (0..body.other_body_count) |i| {
+                body.other_bodies[i].down(allocator);
+            }
             body.code.deinit(allocator);
             allocator.destroy(body);
         } else {
@@ -314,6 +317,15 @@ pub fn dump(lambda: *const LambdaBody) void {
         print_value(&lambda.immediate_table[i]);
         std.debug.print("\n", .{});
     }
+
+    std.debug.print("\nother bodies {{\n", .{});
+
+    for (0..lambda.other_body_count) |i| {
+        std.debug.print("[0] => \n", .{});
+        dump(lambda.other_bodies[i]);
+    }
+
+    std.debug.print("}}\n", .{});
 }
 
 fn print_value(value: *const Value) void {

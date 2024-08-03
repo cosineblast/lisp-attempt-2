@@ -491,7 +491,7 @@ pub const Compilation = struct { //
         defer bound.deinit();
 
         var free = ArrayList([]const u8).init(self.allocator);
-        defer bound.deinit();
+        defer free.deinit();
 
         try analysis.findFreeVariables(expr.body, &bound, &free);
 
