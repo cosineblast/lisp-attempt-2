@@ -216,7 +216,7 @@ fn translateCall(node: *ParseNode, allocator: Allocator) TranslationError!*Expre
 }
 
 pub fn showExpression(expression: *Expression, out: *ArrayList(u8)) !void {
-    try std.json.stringify(expression.*, .{}, out.writer());
+    try std.json.stringify(expression.*, .{ .whitespace = .indent_2 }, out.writer());
 }
 
 const analysis = struct {

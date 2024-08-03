@@ -326,59 +326,20 @@ pub const LambdaBuilder = struct {
 };
 
 pub fn dump(lambda: *const LambdaBody) void {
-    std.debug.print("(function\n", .{});
-    std.debug.print("  (parcount {?})\n", .{lambda.parameter_count});
-    std.debug.print("  (code\n", .{});
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
 
-    for (lambda.code.items) |instruction| {
-        switch (instruction) {
-            .pick => |offset| {
-                std.debug.print("    (pick {})\n", .{offset.offset});
-            },
-            .jf => |offset| {
-                std.debug.print("    (jf {})\n", .{offset.offset});
-            },
-            .jmp => |offset| {
-                std.debug.print("    (jmp {})\n", .{offset.offset});
-            },
-            .load => |id| {
-                std.debug.print("    (load {})\n", .{id.value});
-            },
-            .loadf => {
-                unreachable;
-            },
-            .rip => |info| {
-                std.debug.print("    (rip {} {})\n", .{ info.drop, info.keep });
-            },
-            .call => |info| {
-                std.debug.print("    (call {?})\n", .{info.arg_count});
-            },
-            .tcall => {
-                // TODO
-                unreachable;
-            },
-            .ret => {
-                std.debug.print("     (ret)\n", .{});
-            },
-            .nop => {
-                std.debug.print("    (nop)\n", .{});
-            },
-        }
+    var arr = std.ArrayList(u8).init(allocator);
+    defer arr.deinit();
+
+    const writer = arr.writer();
+
+    for (lambda.code.items) |item| {
+        std.json.stringify(item, .{}, writer) catch unreachable;
+        writer.print("\n", .{}) catch unreachable;
     }
 
-    std.debug.print("  )\n", .{});
-
-    std.debug.print("  (values\n", .{});
-
-    for (0..lambda.value_count) |i| {
-        std.debug.print("    ({} ", .{i});
-
-        print_value(&lambda.values[i]);
-        std.debug.print(")\n", .{});
-    }
-
-    std.debug.print("  )\n", .{});
-    std.debug.print(")\n", .{});
+    std.debug.print("{s}\n", .{arr.items});
 }
 
 fn print_value(value: *const Value) void {
