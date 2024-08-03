@@ -281,23 +281,23 @@ pub const Compilation = struct { //
 
     const Binding = struct { name: []const u8, frame_offset: usize };
 
-    const IntRefPair = struct { value: i64, reference: u8 };
+    const IntIdPair = struct { value: i64, id: u8 };
 
     const Error = error{ OutOfMemory, OtherCompilationError };
 
     const OtherError = union(enum) {
         OutOfMemory,
-        UnkownVariable: []const u8,
+        UnknownVariable: []const u8,
     };
 
     allocator: Allocator,
     lambda_builder: rt.LambdaBuilder,
     frame_size: usize,
     local_bindings: ArrayList(Binding),
-    integer_literals: ArrayList(IntRefPair),
-    true_literal_ref: ?u8,
-    false_literal_ref: ?u8,
-    nil_literal_ref: ?u8,
+    integer_literals: ArrayList(IntIdPair),
+    true_literal_id: ?u8,
+    false_literal_id: ?u8,
+    nil_literal_id: ?u8,
     issue: ?OtherError,
 
     pub fn init(allocator: Allocator) Compilation {
@@ -306,10 +306,10 @@ pub const Compilation = struct { //
             .lambda_builder = rt.LambdaBuilder.init(allocator),
             .frame_size = 0,
             .local_bindings = ArrayList(Binding).init(allocator),
-            .integer_literals = ArrayList(IntRefPair).init(allocator),
-            .true_literal_ref = null,
-            .false_literal_ref = null,
-            .nil_literal_ref = null,
+            .integer_literals = ArrayList(IntIdPair).init(allocator),
+            .true_literal_id = null,
+            .false_literal_id = null,
+            .nil_literal_id = null,
             .issue = null,
         };
     }
@@ -351,13 +351,13 @@ pub const Compilation = struct { //
                 try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(expressions.len), .keep = 0 } });
             },
             .true_expression => {
-                try self.compileSingleton(&self.true_literal_ref, .{ .boolean = true });
+                try self.compileSingleton(&self.true_literal_id, .{ .boolean = true });
             },
             .false_expression => {
-                try self.compileSingleton(&self.false_literal_ref, .{ .boolean = false });
+                try self.compileSingleton(&self.false_literal_id, .{ .boolean = false });
             },
             .nil => {
-                try self.compileSingleton(&self.false_literal_ref, .nil);
+                try self.compileSingleton(&self.false_literal_id, .nil);
             },
         }
 
@@ -365,32 +365,32 @@ pub const Compilation = struct { //
     }
 
     fn compileIntegerLiteral(self: *Self, value: i64) Error!void {
-        var ref: ?u8 = null;
+        var id: ?u8 = null;
         for (self.integer_literals.items) |literal| {
             if (literal.value == value) {
-                ref = literal.reference;
+                id = literal.id;
                 break;
             }
         }
 
-        ref = ref orelse blk: {
-            const next = self.lambda_builder.addValue(.{ .integer = value });
+        id = id orelse blk: {
+            const next = self.lambda_builder.addImmediate(.{ .integer = value });
 
-            try self.integer_literals.append(.{ .reference = next, .value = value });
+            try self.integer_literals.append(.{ .id = next, .value = value });
 
             break :blk next;
         };
 
         try self.lambda_builder.addInstruction(.{ //
-            .load = .{ .value = ref.? },
+            .load = .{ .id = id.? },
         });
     }
 
-    fn compileVariable(self: *Self, value: []const u8) Error!void {
-        const lookup_frame_offset = self.lookupLocal(value);
+    fn compileVariable(self: *Self, name: []const u8) Error!void {
+        const lookup_frame_offset = self.lookupLocal(name);
 
         const frame_offset = lookup_frame_offset orelse {
-            self.issue = .{ .UnkownVariable = value };
+            self.issue = .{ .UnknownVariable = name };
             return error.OtherCompilationError;
         };
 
@@ -469,13 +469,13 @@ pub const Compilation = struct { //
             if (id_ptr.*) |it| {
                 break :blk it;
             } else {
-                const it = self.lambda_builder.addValue(value);
+                const it = self.lambda_builder.addImmediate(value);
                 id_ptr.* = it;
                 break :blk it;
             }
         };
 
-        try self.lambda_builder.addInstruction(.{ .load = .{ .value = id } });
+        try self.lambda_builder.addInstruction(.{ .load = .{ .id = id } });
     }
 
     fn compileLambdaExpression(self: *Self, expr: Expression.Lambda) Error!void {
@@ -511,10 +511,10 @@ pub const Compilation = struct { //
             .lambda_builder = rt.LambdaBuilder.init(self.allocator),
             .frame_size = bindings.items.len,
             .local_bindings = bindings,
-            .integer_literals = ArrayList(IntRefPair).init(self.allocator),
-            .true_literal_ref = null,
-            .false_literal_ref = null,
-            .nil_literal_ref = null,
+            .integer_literals = ArrayList(IntIdPair).init(self.allocator),
+            .true_literal_id = null,
+            .false_literal_id = null,
+            .nil_literal_id = null,
             .issue = null,
         };
 
@@ -526,7 +526,7 @@ pub const Compilation = struct { //
 
         const id = self.lambda_builder.addBodyReference(body);
 
-        try self.lambda_builder.addInstruction(.{ .loadf = .{ .in_context = @intCast(context_length), .value = id } });
+        try self.lambda_builder.addInstruction(.{ .loadf = .{ .in_context = @intCast(context_length), .id = id } });
     }
 
     fn compileLambdaBody(self: *Self, expression: *Expression) Error!void {

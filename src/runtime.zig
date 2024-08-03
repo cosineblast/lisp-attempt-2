@@ -15,48 +15,14 @@ pub const InstructionType = enum {
     nop,
 };
 
-// (fn (x y) (if (< x y) x y))
-
-// (x y)
-// pick 1
-// (x y x)
-// pick 1
-// (x y x y)
-// call </2
-// (x y x<y)
-// jf else
-// (x y)
-// pick 1
-// (x y x)
-// rip 2 1
-// (x)
-// ret
-
-// (fn (xs k) (map (fn (x) (* x k)) xs))
-// (fn (xs k) (let [f (fn (x) (* x k))] (map f xs)))
-
-// (xs k)
-// pick 0
-// (xs k k)
-// loadf f1 1
-// (xs k f)
-// pick 0
-// (xs k f f)
-// pick 3
-// (xs k f f xs)
-// rip 3 2
-// (f xs)
-// tcall map
-//
 pub const Instruction = union(InstructionType) {
-    // TODO: replace single u8 structs with actual u8s
     call: struct { arg_count: u8 },
     tcall: struct { arg_count: u8 },
     pick: struct { offset: u8 },
     jf: struct { offset: u8 },
     jmp: struct { offset: u8 },
-    load: struct { value: u8 },
-    loadf: struct { value: u8, in_context: u8 },
+    load: struct { id: u8 },
+    loadf: struct { id: u8, in_context: u8 },
     rip: struct { drop: u8, keep: u8 },
     ret,
     nop,
@@ -75,8 +41,8 @@ pub const ListObject = struct { item: Value, next: ?*ListObject };
 
 pub const LambdaBody = struct { //
     code: std.ArrayListUnmanaged(Instruction), //
-    values: [256]Value,
-    value_count: usize,
+    immediate_table: [256]Value,
+    immediate_count: usize,
     parameter_count: ?u8,
     other_bodies: [256]*LambdaBody,
     other_body_count: usize,
@@ -153,9 +119,9 @@ pub const VM = struct {
 
                     continue;
                 },
-                .load => |id| {
-                    std.debug.print("> load {}\n", .{id.value});
-                    try self.stack.append(self.active_frame.function.body.values[id.value]);
+                .load => |target| {
+                    std.debug.print("> load {}\n", .{target.id});
+                    try self.stack.append(self.active_frame.function.body.immediate_table[target.id]);
                 },
                 .loadf => {
                     // TODO
@@ -240,7 +206,7 @@ pub const LambdaBuilder = struct {
     const Self = @This();
 
     code: std.ArrayList(Instruction),
-    values: [256]Value,
+    immediate_table: [256]Value,
     other_bodies: [256]*LambdaBody,
     next_value_index: u8,
     next_body_index: u8,
@@ -249,7 +215,7 @@ pub const LambdaBuilder = struct {
     pub fn init(allocator: std.mem.Allocator) Self {
         return LambdaBuilder{ //
             .code = std.ArrayList(Instruction).init(allocator),
-            .values = undefined,
+            .immediate_table = undefined,
             .other_bodies = undefined,
             .next_value_index = 0,
             .parameter_count = 0,
@@ -285,9 +251,9 @@ pub const LambdaBuilder = struct {
         self.code.items[offset] = instruction;
     }
 
-    pub fn addValue(self: *Self, value: Value) u8 {
+    pub fn addImmediate(self: *Self, value: Value) u8 {
         const current = self.next_value_index;
-        self.values[current] = value;
+        self.immediate_table[current] = value;
         self.next_value_index += 1;
         return current;
     }
@@ -310,9 +276,9 @@ pub const LambdaBuilder = struct {
     pub fn build(self: *Self) LambdaBody {
         return LambdaBody{ //
             .parameter_count = self.parameter_count,
-            .values = self.values,
+            .immediate_table = self.immediate_table,
             .code = self.code.moveToUnmanaged(),
-            .value_count = self.next_value_index,
+            .immediate_count = self.next_value_index,
             .other_bodies = self.other_bodies,
             .other_body_count = self.next_body_index,
         };
@@ -343,9 +309,9 @@ pub fn dump(lambda: *const LambdaBody) void {
 
     std.debug.print("immediate table:\n", .{});
 
-    for (0..lambda.value_count) |i| {
+    for (0..lambda.immediate_count) |i| {
         std.debug.print("{}: ", .{i});
-        print_value(&lambda.values[i]);
+        print_value(&lambda.immediate_table[i]);
         std.debug.print("\n", .{});
     }
 }
@@ -379,13 +345,13 @@ test "basic instruction test" {
     const allocator = arena.allocator();
 
     var b = LambdaBuilder.init(allocator);
-    const nah = b.addValue(.{ .boolean = false });
-    const ten = b.addValue(.{ .integer = 10 });
-    const twenty = b.addValue(.{ .integer = 20 });
+    const nah = b.addImmediate(.{ .boolean = false });
+    const ten = b.addImmediate(.{ .integer = 10 });
+    const twenty = b.addImmediate(.{ .integer = 20 });
 
-    try b.addInstruction(Instruction{ .load = .{ .value = ten } });
-    try b.addInstruction(Instruction{ .load = .{ .value = twenty } });
-    try b.addInstruction(Instruction{ .load = .{ .value = nah } });
+    try b.addInstruction(Instruction{ .load = .{ .id = ten } });
+    try b.addInstruction(Instruction{ .load = .{ .id = twenty } });
+    try b.addInstruction(Instruction{ .load = .{ .id = nah } });
     try b.addInstruction(Instruction{ .jf = .{ .offset = 4 } });
     try b.addInstruction(Instruction{ .pick = .{ .offset = 1 } });
     try b.addInstruction(Instruction{ .rip = .{ .keep = 1, .drop = 2 } });
