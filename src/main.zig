@@ -15,15 +15,10 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const file = try std.fs.cwd().openFile("input.txt", .{});
-    defer file.close();
+    const stdin = std.io.getStdIn();
+    var reader = stdin.reader();
 
-    var result = std.ArrayList(u8).init(allocator);
-    try file.reader().readAllArrayList(&result, 4 * 1024 * 1024 * 1024);
-
-    const content = result.items;
-
-    const tree = try parsing.parse(content, allocator);
+    const tree = try parsing.parseFromReader(reader.any(), allocator);
 
     _ = try compilation.translate(tree, allocator);
 

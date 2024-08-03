@@ -4,23 +4,29 @@ const Allocator = std.mem.Allocator;
 
 const TokenType = enum { openPar, closePar, integerLiteral, symbol };
 
-const Token = union(TokenType) { openPar, closePar, integerLiteral: i64, symbol: []const u8 };
+const Token = union(TokenType) {
+    openPar,
+    closePar,
+    integerLiteral: i64,
+    symbol: []const u8,
+};
 
 const Tokenizer = struct {
+    reader: std.io.AnyReader,
+
     next_char: union(enum) { uninitialized, eof, next: u8 },
     next_token: union(enum) { uninitialized, eof, next: Token },
-    rest: []const u8,
     allocator: Allocator,
 
     fn shiftChar(state: *Tokenizer) void {
-        if (state.rest.len == 0) {
+        if (state.reader.readByte()) |byte| {
+            state.next_char = .{ .next = byte };
+        } else |issue| {
+            // TODO: return error if not EndOfStream
+            std.debug.assert(issue == error.EndOfStream);
             state.next_char = .eof;
             return;
         }
-        const value = state.rest[0];
-        state.rest.len -= 1;
-        state.rest.ptr += 1;
-        state.next_char = .{ .next = value };
     }
 
     fn peekChar(state: *Tokenizer) ?u8 {
@@ -199,7 +205,9 @@ const ParseError = error{ OutOfMemory, UnknownChar, EOF, UnmatchedClosePar, Over
 fn parseNode(state: *ParseState) ParseError!*ParseNode {
     const current = try state.tokenizer.peekOrFail();
 
-    try state.tokenizer.shift();
+    // This is a hack to shift to the next token in a lazy manner.
+    // This is useful when reeading from stdin.
+    state.tokenizer.next_token = .uninitialized;
 
     switch (current) {
         .symbol => |value| {
@@ -231,7 +239,8 @@ fn parseNode(state: *ParseState) ParseError!*ParseNode {
 fn parseRestOfList(state: *ParseState) ParseError!?*ListNode {
     switch (try state.tokenizer.peekOrFail()) {
         .closePar => {
-            try state.tokenizer.shift();
+            state.tokenizer.next_token = .uninitialized;
+            // try state.tokenizer.shift();
             return null;
         },
 
@@ -246,7 +255,25 @@ fn parseRestOfList(state: *ParseState) ParseError!?*ListNode {
 }
 
 pub fn parse(str: []const u8, allocator: Allocator) ParseError!*ParseNode {
-    var state = ParseState{ .allocator = allocator, .tokenizer = .{ .rest = str, .allocator = allocator, .next_token = .uninitialized, .next_char = .uninitialized } };
+    var stream = std.io.FixedBufferStream([]const u8){ .buffer = str, .pos = 0 };
+
+    const reader = stream.reader();
+
+    const any = reader.any();
+
+    return parseFromReader(any, allocator);
+}
+
+pub fn parseFromReader(reader: std.io.AnyReader, allocator: Allocator) ParseError!*ParseNode {
+    var state = ParseState{ //
+        .allocator = allocator,
+        .tokenizer = .{ //
+            .reader = reader,
+            .allocator = allocator,
+            .next_token = .uninitialized,
+            .next_char = .uninitialized,
+        },
+    };
 
     return parseNode(&state);
 }
