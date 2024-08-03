@@ -382,7 +382,7 @@ pub const Compilation = struct { //
 
         const frame_offset = lookup_frame_offset orelse {
             self.issue = .{ .UnkownVariable = value };
-            return;
+            return error.OtherCompilationError;
         };
 
         const stack_offset = self.computeStackOffset(frame_offset);
