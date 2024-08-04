@@ -65,7 +65,7 @@ pub const LambdaBody = struct { //
 
 pub const BytecodeLambda = struct {
     body: *LambdaBody,
-    context: []Value,
+    context: std.ArrayListUnmanaged(Value),
 };
 
 pub const Value = union(ValueType) {
@@ -103,28 +103,76 @@ pub const Value = union(ValueType) {
     }
 };
 
-pub const Frame = struct { function: *BytecodeLambda, instruction_offset: usize };
+pub const Frame = struct { //
+    body: *LambdaBody,
+    instruction_offset: usize,
+};
 
 pub const VM = struct {
+    const Self = @This();
+
     stack: std.ArrayList(Value),
     call_stack: std.ArrayList(Frame),
     allocator: std.mem.Allocator,
-    active_frame: Frame,
+    active_frame: ?Frame,
 
-    pub fn execute(self: *VM) !void {
-        var instruction_offset = self.active_frame.instruction_offset;
-        const limit = self.active_frame.function.body.code.items.len;
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return VM{ //
+            .allocator = allocator,
+            .stack = std.ArrayList(Value).init(allocator),
+            .call_stack = std.ArrayList(Frame).init(allocator),
+            .active_frame = null,
+        };
+    }
 
-        defer self.active_frame.instruction_offset = instruction_offset;
+    pub fn deinit(self: *Self) void {
+        self.stack.deinit();
+        self.call_stack.deinit();
 
-        while (instruction_offset < limit) {
-            const instruction = self.active_frame.function.body.code.items[instruction_offset];
+        if (self.active_frame) |frame| {
+            frame.body.down(self.allocator);
+        }
+    }
+
+    pub fn eval(self: *Self, body: *LambdaBody) !Value {
+        self.active_frame = .{ .body = body, .instruction_offset = 0 };
+
+        const before = self.stack.items.len;
+
+        try self.execute();
+
+        std.debug.assert(self.stack.items.len == before + 1);
+
+        return self.stack.pop();
+    }
+
+    fn execute(self: *VM) !void {
+        const limit = self.active_frame.?.body.code.items.len;
+
+        while (self.active_frame.?.instruction_offset < limit) {
+            const instruction = self.active_frame.?.body.code.items[self.active_frame.?.instruction_offset];
+
+            {
+                std.debug.print("[{}]s: ", .{self.stack.items.len});
+                var i = self.stack.items.len;
+                var count: usize = 0;
+                while (i != 0 and count < 8) {
+                    i -= 1;
+                    std.debug.print("{} ", .{self.stack.items[i]});
+                    count += 1;
+                }
+                std.debug.print("\n", .{});
+            }
+
+            self.active_frame.?.instruction_offset += 1;
 
             switch (instruction) {
                 .pick => |offset| {
                     std.debug.print("> pick {}\n", .{offset.offset});
 
                     std.debug.assert(offset.offset < self.stack.items.len);
+
+                    try self.stack.append(self.stack.items[self.stack.items.len - 1 - offset.offset]);
                 },
                 .jf => |offset| {
                     std.debug.print("> jf {}\n", .{offset.offset});
@@ -133,37 +181,50 @@ pub const VM = struct {
 
                     if (top == ValueType.boolean and top.boolean == false) {
                         std.debug.print(">  jumped\n", .{});
-                        std.debug.assert(instruction_offset + offset.offset < limit);
+                        std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= limit);
 
-                        instruction_offset += offset.offset;
+                        self.active_frame.?.instruction_offset -= 1;
+                        self.active_frame.?.instruction_offset += offset.offset;
                     }
-
-                    continue;
                 },
                 .jmp => |offset| {
                     std.debug.print("> jmp {}\n", .{offset.offset});
-                    std.debug.assert(instruction_offset + offset.offset < limit);
+                    std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= limit);
 
-                    instruction_offset += offset.offset;
-
-                    continue;
+                    self.active_frame.?.instruction_offset -= 1;
+                    self.active_frame.?.instruction_offset += offset.offset;
                 },
                 .load => |target| {
                     std.debug.print("> load {}\n", .{target.id});
-                    try self.stack.append(self.active_frame.function.body.immediate_table[target.id]);
+                    try self.stack.append(self.active_frame.?.body.immediate_table[target.id]);
                 },
-                .loadf => {
-                    // TODO
-                    unreachable;
+                .loadf => |info| {
+                    const body = self.active_frame.?.body.other_bodies[info.id];
+
+                    const function = try self.allocator.create(BytecodeLambda);
+
+                    function.body = body;
+                    var context = std.ArrayList(Value).init(self.allocator);
+                    function.context = context.moveToUnmanaged();
+
+                    for (0..info.in_context) |_| {
+                        try function.context.append(self.allocator, self.stack.pop());
+                    }
+
+                    std.mem.reverse(Value, function.context.items);
+
+                    try self.stack.append(.{ .lambda = function });
                 },
                 .rip => |info| {
                     std.debug.print("> rip {} {}\n", .{ info.drop, info.keep });
 
+                    std.debug.assert(self.stack.items.len >= info.drop + info.keep);
+
                     // x x k k k
                     const keep = info.keep;
                     const drop = info.drop;
-                    var i = self.stack.items.len - (keep + drop - 1) - 1;
-                    var j = self.stack.items.len - (keep - 1) - 1;
+                    var i = self.stack.items.len - 1 - (keep + drop - 1);
+                    var j = self.stack.items.len - 1 - (keep - 1);
                     var count: usize = 0;
 
                     while (count < keep) {
@@ -192,16 +253,14 @@ pub const VM = struct {
                                 return error.MismatchedCall;
                             }
 
-                            try self.call_stack.append(self.active_frame);
+                            try self.call_stack.append(self.active_frame.?);
 
-                            self.active_frame.function = lambda;
-                            self.active_frame.instruction_offset = 0;
+                            self.active_frame.?.body = lambda.body;
+                            self.active_frame.?.instruction_offset = 0;
 
-                            for (lambda.context) |value| {
+                            for (lambda.context.items) |value| {
                                 try self.stack.append(value);
                             }
-
-                            continue;
                         },
 
                         else => return error.IllegalCall,
@@ -214,16 +273,11 @@ pub const VM = struct {
                 .ret => {
                     std.debug.print("> ret \n", .{});
                     self.active_frame = self.call_stack.pop();
-                    self.active_frame.instruction_offset += 1;
-
-                    continue;
                 },
                 .nop => {
                     std.debug.print("> nop \n", .{});
                 },
             }
-
-            instruction_offset += 1;
         }
     }
 };

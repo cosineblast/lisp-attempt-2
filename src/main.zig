@@ -20,6 +20,9 @@ pub fn main() !void {
 
     std.debug.print("lisp attempt 2\n", .{});
 
+    var vm = rt.VM.init(allocator);
+    defer vm.deinit();
+
     while (true) {
         std.debug.print("\n> ", .{});
         const tree = parsing.parseFromReader(reader.any(), allocator) catch |e| {
@@ -30,18 +33,18 @@ pub fn main() !void {
             }
         };
 
-        std.debug.print("read ok!\n", .{});
+        std.debug.print("[REPL] read ok!\n", .{});
 
         const expr = try compilation.translate(tree, allocator);
 
-        std.debug.print("translate ok!\n", .{});
+        std.debug.print("[REPL] translate ok!\n", .{});
 
         var arr = std.ArrayList(u8).init(base_allocator);
         defer arr.deinit();
 
         try compilation.showExpression(expr, &arr);
 
-        std.debug.print("translation:\n{s}\n", .{arr.items});
+        std.debug.print("[REPL] translation:\n{s}\n", .{arr.items});
 
         var compiler = compilation.Compilation.init(base_allocator);
         defer compiler.deinit();
@@ -51,11 +54,17 @@ pub fn main() !void {
         var body = try compiler.lambda_builder.buildOnHeap();
         defer body.down(base_allocator);
 
-        std.debug.print("compile ok!\n", .{});
+        std.debug.print("[REPL] compile ok!\n", .{});
 
-        std.debug.print("Lambda Body:\n", .{});
+        std.debug.print("[REPL] lambda Body:\n", .{});
 
         rt.dump(body);
+
+        std.debug.print("[REPL] executing... \n", .{});
+
+        const result = try vm.eval(body);
+
+        std.debug.print("{}", .{result});
     }
 }
 
