@@ -348,7 +348,7 @@ pub const Compilation = struct { //
                 for (expressions) |item| {
                     try self.compileExpression(item);
                 }
-                try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(expressions.len), .keep = 0 } });
+                try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(expressions.len - 1), .keep = 1 } });
             },
             .true_expression => {
                 try self.compileSingleton(&self.true_literal_id, .{ .boolean = true });
