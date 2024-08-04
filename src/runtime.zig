@@ -75,6 +75,32 @@ pub const Value = union(ValueType) {
     boolean: bool,
     lambda: *BytecodeLambda,
     real_function: *const fn (state: *VM, count: u8) void,
+
+    pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        switch (self) {
+            .integer => |i| {
+                try writer.print("{}", .{i});
+            },
+            .boolean => |x| {
+                try writer.print("{}", .{x});
+            },
+            .lambda => {
+                try writer.print("<bfn>", .{});
+            },
+            .real_function => {
+                try writer.print("<rfn>", .{});
+            },
+            .list => {
+                try writer.print("(...)", .{});
+            },
+            .nil => {
+                try writer.print("nil", .{});
+            },
+        }
+    }
 };
 
 pub const Frame = struct { function: *BytecodeLambda, instruction_offset: usize };
