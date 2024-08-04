@@ -153,9 +153,7 @@ pub const VM = struct {
     }
 
     fn execute(self: *VM) !void {
-        const limit = self.active_frame.?.body.code.items.len;
-
-        while (self.active_frame.?.instruction_offset < limit) {
+        while (self.active_frame.?.instruction_offset < self.active_frame.?.body.code.items.len) {
             const instruction = self.active_frame.?.body.code.items[self.active_frame.?.instruction_offset];
 
             {
@@ -187,7 +185,7 @@ pub const VM = struct {
 
                     if (top == ValueType.boolean and top.boolean == false) {
                         std.debug.print(">  jumped\n", .{});
-                        std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= limit);
+                        std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
 
                         self.active_frame.?.instruction_offset -= 1;
                         self.active_frame.?.instruction_offset += offset.offset;
@@ -195,7 +193,7 @@ pub const VM = struct {
                 },
                 .jmp => |offset| {
                     std.debug.print("> jmp +{}\n", .{offset.offset});
-                    std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= limit);
+                    std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
 
                     self.active_frame.?.instruction_offset -= 1;
                     self.active_frame.?.instruction_offset += offset.offset;

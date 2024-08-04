@@ -435,6 +435,8 @@ pub const Compilation = struct { //
         const jf_index = self.lambda_builder.nextOffset();
         try self.lambda_builder.addInstruction(.{ .jf = .{ .offset = 0 } });
 
+        self.frame_size -= 1; // jf pops one value
+
         const before_then = self.lambda_builder.insertedSoFar();
         try self.compileExpression(value.then_branch);
         const after_then = self.lambda_builder.insertedSoFar();
@@ -445,6 +447,8 @@ pub const Compilation = struct { //
 
         const jmp_index = self.lambda_builder.nextOffset();
         try self.lambda_builder.addInstruction(.{ .jmp = .{ .offset = 0 } });
+
+        self.frame_size -= 1; // we're back to the original frame size
 
         const before_else = self.lambda_builder.insertedSoFar();
         try self.compileExpression(value.else_branch);
