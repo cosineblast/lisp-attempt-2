@@ -24,7 +24,7 @@ pub fn main() !void {
 
     std.debug.print("lisp attempt 2\n", .{});
 
-    var vm = VM.init(allocator);
+    var vm = try VM.init(allocator);
     defer vm.deinit();
 
     while (true) {

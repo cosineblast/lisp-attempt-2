@@ -8,6 +8,8 @@ const Self = @This();
 
 const Tuple = std.meta.Tuple;
 
+const builtins = @import("builtins.zig");
+
 pub const Frame = struct { //
     body: *rt.LambdaBody,
     instruction_offset: usize,
@@ -19,14 +21,27 @@ allocator: std.mem.Allocator,
 active_frame: ?Frame,
 globals: std.ArrayList(Tuple(&.{ []const u8, Value })),
 
-pub fn init(allocator: std.mem.Allocator) Self {
-    return Self{ //
+pub fn init(allocator: std.mem.Allocator) !Self {
+    var self = Self{ //
         .allocator = allocator,
         .stack = std.ArrayList(Value).init(allocator),
         .call_stack = std.ArrayList(Frame).init(allocator),
         .active_frame = null,
         .globals = std.ArrayList(Tuple(&.{ []const u8, Value })).init(allocator),
     };
+
+    try self.addBuiltins();
+
+    return self;
+}
+
+fn addBuiltins(self: *Self) !void {
+    try self.globals.append(.{
+        "+",
+        .{ .real_function = builtins.add },
+    });
+    try self.globals.append(.{ "-", .{ .real_function = builtins.subtract } });
+    try self.globals.append(.{ "*", .{ .real_function = builtins.multiply } });
 }
 
 pub fn deinit(self: *Self) void {
@@ -123,16 +138,18 @@ fn execute(self: *Self) !void {
             .loadg => |id| {
                 const name = self.active_frame.?.body.global_table[id.id];
 
-                var value: ?Value = null;
+                var value_: ?Value = null;
 
                 for (self.globals.items) |it| {
                     if (std.mem.eql(u8, it.@"0", name)) {
-                        value = it.@"1";
+                        value_ = it.@"1";
                         break;
                     }
                 }
 
-                if (value == null) {
+                if (value_) |value| {
+                    try self.stack.append(value);
+                } else {
                     return error.UnknownVariable;
                 }
             },
@@ -166,7 +183,7 @@ fn execute(self: *Self) !void {
 
                 switch (fn_value) {
                     .real_function => |function| {
-                        function(self, info.arg_count);
+                        try function(self, info.arg_count);
                     },
 
                     .lambda => |lambda| {

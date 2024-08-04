@@ -69,7 +69,7 @@ pub const Value = union(enum) {
     integer: i64,
     boolean: bool,
     lambda: *BytecodeLambda,
-    real_function: *const fn (state: *VM, count: u8) void,
+    real_function: *const fn (state: *VM, count: u8) anyerror!void,
 
     pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
