@@ -42,6 +42,12 @@ fn addBuiltins(self: *Self) !void {
     });
     try self.globals.append(.{ "-", .{ .real_function = builtins.subtract } });
     try self.globals.append(.{ "*", .{ .real_function = builtins.multiply } });
+    try self.globals.append(.{ "/", .{ .real_function = builtins.divide } });
+    try self.globals.append(.{ "int?", .{ .real_function = builtins.isInt } });
+    try self.globals.append(.{ "fn?", .{ .real_function = builtins.isFn } });
+    try self.globals.append(.{ "bool?", .{ .real_function = builtins.isBool } });
+    try self.globals.append(.{ "<", .{ .real_function = builtins.lt } });
+    try self.globals.append(.{ ">", .{ .real_function = builtins.gt } });
 }
 
 pub fn deinit(self: *Self) void {
