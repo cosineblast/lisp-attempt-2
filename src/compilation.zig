@@ -519,6 +519,8 @@ pub const Compilation = struct { //
             .issue = null,
         };
 
+        next.lambda_builder.setParameterCount(@intCast(expr.parameters.len));
+
         defer next.deinit();
 
         try next.compileLambdaBody(expr.body);
