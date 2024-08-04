@@ -2,31 +2,23 @@ const std = @import("std");
 
 const parsing = @import("parsing.zig");
 
-pub const InstructionType = enum {
-    call,
-    tcall,
-    pick,
-    jf,
-    jmp,
-    load,
-    loadf,
-    rip,
-    ret,
-    nop,
-};
+const Tuple = std.meta.Tuple;
 
-pub const Instruction = union(InstructionType) {
+pub const Instruction = union(enum) {
     call: struct { arg_count: u8 },
     tcall: struct { arg_count: u8 },
     pick: struct { offset: u8 },
     jf: struct { offset: u8 },
     jmp: struct { offset: u8 },
     load: struct { id: u8 },
+    loadg: struct { id: u8 },
     loadf: struct { id: u8, in_context: u8 },
     rip: struct { drop: u8, keep: u8 },
     ret,
     nop,
 };
+
+pub const InstructionType = std.meta.Tag(Instruction);
 
 pub const ValueType = enum {
     nil,
@@ -47,6 +39,8 @@ pub const LambdaBody = struct { //
     other_bodies: [256]*LambdaBody,
     other_body_count: usize,
     ref_count: usize = 1,
+    global_table: [256][]const u8,
+    global_count: usize,
 
     pub fn down(body: *LambdaBody, allocator: std.mem.Allocator) void {
         std.debug.assert(body.ref_count > 0);
@@ -121,6 +115,7 @@ pub const VM = struct {
     call_stack: std.ArrayList(Frame),
     allocator: std.mem.Allocator,
     active_frame: ?Frame,
+    globals: std.ArrayList(Tuple(&.{ []const u8, Value })),
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return VM{ //
@@ -128,12 +123,14 @@ pub const VM = struct {
             .stack = std.ArrayList(Value).init(allocator),
             .call_stack = std.ArrayList(Frame).init(allocator),
             .active_frame = null,
+            .globals = std.ArrayList(Tuple(&.{ []const u8, Value })).init(allocator),
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.stack.deinit();
         self.call_stack.deinit();
+        self.globals.deinit();
     }
 
     pub fn eval(self: *Self, body: *LambdaBody) !Value {
@@ -221,6 +218,22 @@ pub const VM = struct {
 
                     try self.stack.append(.{ .lambda = function });
                 },
+                .loadg => |id| {
+                    const name = self.active_frame.?.body.global_table[id.id];
+
+                    var value: ?Value = null;
+
+                    for (self.globals.items) |it| {
+                        if (std.mem.eql(u8, it.@"0", name)) {
+                            value = it.@"1";
+                            break;
+                        }
+                    }
+
+                    if (value == null) {
+                        return error.UnknownVariable;
+                    }
+                },
                 .rip => |info| {
                     std.debug.print("> rip {} {}\n", .{ info.drop, info.keep });
 
@@ -297,8 +310,10 @@ pub const LambdaBuilder = struct {
     code: std.ArrayList(Instruction),
     immediate_table: [256]Value,
     other_bodies: [256]*LambdaBody,
+    global_table: [256][]const u8,
     next_value_index: u8,
     next_body_index: u8,
+    next_global_index: u8,
     parameter_count: ?u8,
 
     pub fn init(allocator: std.mem.Allocator) Self {
@@ -306,9 +321,11 @@ pub const LambdaBuilder = struct {
             .code = std.ArrayList(Instruction).init(allocator),
             .immediate_table = undefined,
             .other_bodies = undefined,
+            .global_table = undefined,
             .next_value_index = 0,
             .parameter_count = 0,
             .next_body_index = 0,
+            .next_global_index = 0,
         };
     }
 
@@ -354,6 +371,13 @@ pub const LambdaBuilder = struct {
         return current;
     }
 
+    pub fn addGlobalReference(self: *Self, name: []const u8) u8 {
+        const current = self.next_global_index;
+        self.global_table[current] = name;
+        self.next_global_index += 1;
+        return current;
+    }
+
     pub fn setVariadic(self: *Self) void {
         self.parameter_count = null;
     }
@@ -370,6 +394,8 @@ pub const LambdaBuilder = struct {
             .immediate_count = self.next_value_index,
             .other_bodies = self.other_bodies,
             .other_body_count = self.next_body_index,
+            .global_table = self.global_table,
+            .global_count = self.next_global_index,
         };
     }
 
@@ -462,11 +488,11 @@ test "basic instruction test" {
 
     var lambda_body = b.build();
     var lambda: BytecodeLambda = undefined;
-    lambda.context = &.{};
+    lambda.context = .{ .items = &.{}, .capacity = 0 };
     lambda.body = &lambda_body;
     var frame: Frame = undefined;
     frame.instruction_offset = 0;
-    frame.function = &lambda;
+    frame.body = lambda.body;
 
     dump(lambda.body);
 

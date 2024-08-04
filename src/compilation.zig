@@ -287,7 +287,6 @@ pub const Compilation = struct { //
 
     const OtherError = union(enum) {
         OutOfMemory,
-        UnknownVariable: []const u8,
     };
 
     allocator: Allocator,
@@ -295,6 +294,7 @@ pub const Compilation = struct { //
     frame_size: usize,
     local_bindings: ArrayList(Binding),
     integer_literals: ArrayList(IntIdPair),
+    global_table: ArrayList(Tuple(&.{ []const u8, u8 })),
     true_literal_id: ?u8,
     false_literal_id: ?u8,
     nil_literal_id: ?u8,
@@ -307,6 +307,7 @@ pub const Compilation = struct { //
             .frame_size = 0,
             .local_bindings = ArrayList(Binding).init(allocator),
             .integer_literals = ArrayList(IntIdPair).init(allocator),
+            .global_table = ArrayList(Tuple(&.{ []const u8, u8 })).init(allocator),
             .true_literal_id = null,
             .false_literal_id = null,
             .nil_literal_id = null,
@@ -317,6 +318,7 @@ pub const Compilation = struct { //
     pub fn deinit(self: *Self) void {
         self.local_bindings.deinit();
         self.integer_literals.deinit();
+        self.global_table.deinit();
     }
 
     // The expected behavior of all compile functions, is that
@@ -387,16 +389,30 @@ pub const Compilation = struct { //
     }
 
     fn compileVariable(self: *Self, name: []const u8) Error!void {
-        const lookup_frame_offset = self.lookupLocal(name);
+        const frame_offset_ = self.lookupLocal(name);
 
-        const frame_offset = lookup_frame_offset orelse {
-            self.issue = .{ .UnknownVariable = name };
-            return error.OtherCompilationError;
-        };
+        if (frame_offset_) |frame_offset| {
+            const stack_offset = self.computeStackOffset(frame_offset);
 
-        const stack_offset = self.computeStackOffset(frame_offset);
+            try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(stack_offset) } });
+        } else {
+            var id_: ?u8 = null;
 
-        try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(stack_offset) } });
+            for (self.global_table.items) |it| {
+                if (std.mem.eql(u8, it.@"0", name)) {
+                    id_ = it.@"1";
+                    break;
+                }
+            }
+
+            const id = id_ orelse blk: {
+                const id = self.lambda_builder.addGlobalReference(name);
+                try self.global_table.append(.{ name, id });
+                break :blk id;
+            };
+
+            try self.lambda_builder.addInstruction(.{ .loadg = .{ .id = @intCast(id) } });
+        }
     }
 
     fn computeStackOffset(self: *Self, frame_offset: usize) usize {
@@ -511,7 +527,7 @@ pub const Compilation = struct { //
             }
         }
 
-        var next = Compilation{
+        var next = Compilation{ //
             .allocator = self.allocator,
             .lambda_builder = rt.LambdaBuilder.init(self.allocator),
             .frame_size = bindings.items.len,
@@ -521,6 +537,7 @@ pub const Compilation = struct { //
             .false_literal_id = null,
             .nil_literal_id = null,
             .issue = null,
+            .global_table = ArrayList(Tuple(&.{ []const u8, u8 })).init(self.allocator),
         };
 
         next.lambda_builder.setParameterCount(@intCast(expr.parameters.len));
