@@ -3,7 +3,11 @@ const std = @import("std");
 const parsing = @import("./parsing.zig");
 const rt = @import("./runtime.zig");
 
+const VM = rt.VM;
+
 const compilation = @import("compilation.zig");
+
+const translation = compilation.translation;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -20,7 +24,7 @@ pub fn main() !void {
 
     std.debug.print("lisp attempt 2\n", .{});
 
-    var vm = rt.VM.init(allocator);
+    var vm = VM.init(allocator);
     defer vm.deinit();
 
     while (true) {
@@ -35,7 +39,7 @@ pub fn main() !void {
 
         std.debug.print("[REPL] read ok!\n", .{});
 
-        const expr = try compilation.translate(tree, allocator);
+        const expr = try compilation.translation.translate(tree, allocator);
 
         std.debug.print("[REPL] translate ok!\n", .{});
 

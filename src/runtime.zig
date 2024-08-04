@@ -1,8 +1,12 @@
 const std = @import("std");
 
-const parsing = @import("parsing.zig");
+const parsing = @import("./parsing.zig");
 
 const Tuple = std.meta.Tuple;
+
+pub const VM = @import("./runtime/VM.zig");
+
+const LambdaBuilder = @import("./LambdaBuilder.zig");
 
 pub const Instruction = union(enum) {
     call: struct { arg_count: u8 },
@@ -19,15 +23,6 @@ pub const Instruction = union(enum) {
 };
 
 pub const InstructionType = std.meta.Tag(Instruction);
-
-pub const ValueType = enum {
-    nil,
-    list,
-    integer,
-    boolean,
-    lambda,
-    real_function,
-};
 
 pub const ListObject = struct { item: Value, next: ?*ListObject };
 
@@ -68,7 +63,7 @@ pub const BytecodeLambda = struct {
     context: std.ArrayListUnmanaged(Value),
 };
 
-pub const Value = union(ValueType) {
+pub const Value = union(enum) {
     nil, //
     list: *ListObject,
     integer: i64,
@@ -103,308 +98,7 @@ pub const Value = union(ValueType) {
     }
 };
 
-pub const Frame = struct { //
-    body: *LambdaBody,
-    instruction_offset: usize,
-};
-
-pub const VM = struct {
-    const Self = @This();
-
-    stack: std.ArrayList(Value),
-    call_stack: std.ArrayList(Frame),
-    allocator: std.mem.Allocator,
-    active_frame: ?Frame,
-    globals: std.ArrayList(Tuple(&.{ []const u8, Value })),
-
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return VM{ //
-            .allocator = allocator,
-            .stack = std.ArrayList(Value).init(allocator),
-            .call_stack = std.ArrayList(Frame).init(allocator),
-            .active_frame = null,
-            .globals = std.ArrayList(Tuple(&.{ []const u8, Value })).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.stack.deinit();
-        self.call_stack.deinit();
-        self.globals.deinit();
-    }
-
-    pub fn eval(self: *Self, body: *LambdaBody) !Value {
-        std.debug.assert(self.active_frame == null);
-
-        self.active_frame = .{ .body = body, .instruction_offset = 0 };
-
-        const before = self.stack.items.len;
-
-        try self.execute();
-
-        std.debug.assert(self.stack.items.len == before + 1);
-
-        self.active_frame = null;
-
-        return self.stack.pop();
-    }
-
-    fn execute(self: *VM) !void {
-        while (self.active_frame.?.instruction_offset < self.active_frame.?.body.code.items.len) {
-            const instruction = self.active_frame.?.body.code.items[self.active_frame.?.instruction_offset];
-
-            {
-                std.debug.print("[{}]s: ", .{self.stack.items.len});
-                var i = self.stack.items.len;
-                var count: usize = 0;
-                while (i != 0 and count < 8) {
-                    i -= 1;
-                    std.debug.print("{} ", .{self.stack.items[i]});
-                    count += 1;
-                }
-                std.debug.print("\n", .{});
-            }
-
-            self.active_frame.?.instruction_offset += 1;
-
-            switch (instruction) {
-                .pick => |offset| {
-                    std.debug.print("> pick {}\n", .{offset.offset});
-
-                    std.debug.assert(offset.offset < self.stack.items.len);
-
-                    try self.stack.append(self.stack.items[self.stack.items.len - 1 - offset.offset]);
-                },
-                .jf => |offset| {
-                    std.debug.print("> jf +{}\n", .{offset.offset});
-
-                    const top = self.stack.pop();
-
-                    if (top == ValueType.boolean and top.boolean == false) {
-                        std.debug.print(">  jumped\n", .{});
-                        std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
-
-                        self.active_frame.?.instruction_offset -= 1;
-                        self.active_frame.?.instruction_offset += offset.offset;
-                    }
-                },
-                .jmp => |offset| {
-                    std.debug.print("> jmp +{}\n", .{offset.offset});
-                    std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
-
-                    self.active_frame.?.instruction_offset -= 1;
-                    self.active_frame.?.instruction_offset += offset.offset;
-                },
-                .load => |target| {
-                    std.debug.print("> load @{}\n", .{target.id});
-                    try self.stack.append(self.active_frame.?.body.immediate_table[target.id]);
-                },
-                .loadf => |info| {
-                    std.debug.print("> loadf @{}\n", .{info.id});
-
-                    const body = self.active_frame.?.body.other_bodies[info.id];
-
-                    const function = try self.allocator.create(BytecodeLambda);
-
-                    function.body = body;
-                    var context = std.ArrayList(Value).init(self.allocator);
-                    function.context = context.moveToUnmanaged();
-
-                    for (0..info.in_context) |_| {
-                        try function.context.append(self.allocator, self.stack.pop());
-                    }
-
-                    std.mem.reverse(Value, function.context.items);
-
-                    try self.stack.append(.{ .lambda = function });
-                },
-                .loadg => |id| {
-                    const name = self.active_frame.?.body.global_table[id.id];
-
-                    var value: ?Value = null;
-
-                    for (self.globals.items) |it| {
-                        if (std.mem.eql(u8, it.@"0", name)) {
-                            value = it.@"1";
-                            break;
-                        }
-                    }
-
-                    if (value == null) {
-                        return error.UnknownVariable;
-                    }
-                },
-                .rip => |info| {
-                    std.debug.print("> rip {} {}\n", .{ info.drop, info.keep });
-
-                    std.debug.assert(self.stack.items.len >= info.drop + info.keep);
-
-                    // x x k k k
-                    const keep = info.keep;
-                    const drop = info.drop;
-                    var i = self.stack.items.len - 1 - (keep + drop - 1);
-                    var j = self.stack.items.len - 1 - (keep - 1);
-                    var count: usize = 0;
-
-                    while (count < keep) {
-                        self.stack.items[i] = self.stack.items[j];
-                        i += 1;
-                        j += 1;
-                        count += 1;
-                    }
-
-                    // TODO: check if it is ok to touch this directly,
-                    // or if there is a function in the standard library to do this.
-                    self.stack.items.len -= drop;
-                },
-                .call => |info| {
-                    std.debug.print("> call\n", .{});
-
-                    const fn_value = self.stack.pop();
-
-                    switch (fn_value) {
-                        .real_function => |function| {
-                            function(self, info.arg_count);
-                        },
-
-                        .lambda => |lambda| {
-                            if (lambda.body.parameter_count != null and lambda.body.parameter_count != info.arg_count) {
-                                return error.MismatchedCall;
-                            }
-
-                            try self.call_stack.append(self.active_frame.?);
-
-                            self.active_frame.?.body = lambda.body;
-                            self.active_frame.?.instruction_offset = 0;
-
-                            for (lambda.context.items) |value| {
-                                try self.stack.append(value);
-                            }
-                        },
-
-                        else => return error.IllegalCall,
-                    }
-                },
-                .tcall => {
-                    // TODO
-                    unreachable;
-                },
-                .ret => {
-                    std.debug.print("> ret \n", .{});
-                    self.active_frame = self.call_stack.pop();
-                },
-                .nop => {
-                    std.debug.print("> nop \n", .{});
-                },
-            }
-        }
-    }
-};
-
-pub const LambdaBuilder = struct {
-    // The current implementation of this interpreter uses an array of tagged unions to store the instructions,
-    // but in the future, that may be replaced by a serialized array of bytes.
-    // The API of this module tries to be agnostic to which of these is utilized.
-    const Self = @This();
-
-    code: std.ArrayList(Instruction),
-    immediate_table: [256]Value,
-    other_bodies: [256]*LambdaBody,
-    global_table: [256][]const u8,
-    next_value_index: u8,
-    next_body_index: u8,
-    next_global_index: u8,
-    parameter_count: ?u8,
-
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return LambdaBuilder{ //
-            .code = std.ArrayList(Instruction).init(allocator),
-            .immediate_table = undefined,
-            .other_bodies = undefined,
-            .global_table = undefined,
-            .next_value_index = 0,
-            .parameter_count = 0,
-            .next_body_index = 0,
-            .next_global_index = 0,
-        };
-    }
-
-    pub fn addInstruction(self: *Self, instruction: Instruction) !void {
-        try self.code.append(instruction);
-    }
-
-    // The number of instructions inserted so far in this function
-    pub fn insertedSoFar(self: *Self) usize {
-        return self.code.items.len;
-    }
-
-    /// Returns an unsigned integer that represents the index of beginning of the next instruction to
-    /// be inserted. As of now, there are no guarantees on the semantics of addition or subtraction
-    /// with this given offset (the implementation can be based on arrays of tagged unions, or
-    /// byte arrays), but it is guaranteed that this index can be used with setInstruction
-    pub fn nextOffset(self: *Self) usize {
-        return self.code.items.len;
-    }
-
-    /// Modifies the inserted code, to set the given instruction at the given offset.
-    /// It is invalid (altough not necessarily detectable) to use this operation with an offset
-    /// that was not returned by nextOffset, nor to use it to override an existing instruction
-    /// with another instruction of different serialized-byte-size.
-    pub fn setInstruction(self: *Self, offset: usize, instruction: Instruction) void {
-        std.debug.assert(offset < self.code.items.len);
-        std.debug.assert(@as(InstructionType, instruction) == @as(InstructionType, self.code.items[offset]));
-
-        self.code.items[offset] = instruction;
-    }
-
-    pub fn addImmediate(self: *Self, value: Value) u8 {
-        const current = self.next_value_index;
-        self.immediate_table[current] = value;
-        self.next_value_index += 1;
-        return current;
-    }
-
-    pub fn addBodyReference(self: *Self, body: *LambdaBody) u8 {
-        const current = self.next_body_index;
-        self.other_bodies[current] = body;
-        self.next_body_index += 1;
-        return current;
-    }
-
-    pub fn addGlobalReference(self: *Self, name: []const u8) u8 {
-        const current = self.next_global_index;
-        self.global_table[current] = name;
-        self.next_global_index += 1;
-        return current;
-    }
-
-    pub fn setVariadic(self: *Self) void {
-        self.parameter_count = null;
-    }
-
-    pub fn setParameterCount(self: *Self, count: u8) void {
-        self.parameter_count = count;
-    }
-
-    pub fn build(self: *Self) LambdaBody {
-        return LambdaBody{ //
-            .parameter_count = self.parameter_count,
-            .immediate_table = self.immediate_table,
-            .code = self.code.moveToUnmanaged(),
-            .immediate_count = self.next_value_index,
-            .other_bodies = self.other_bodies,
-            .other_body_count = self.next_body_index,
-            .global_table = self.global_table,
-            .global_count = self.next_global_index,
-        };
-    }
-
-    pub fn buildOnHeap(self: *Self) !*LambdaBody {
-        const result = try self.code.allocator.create(LambdaBody);
-        result.* = self.build();
-        return result;
-    }
-};
+pub const ValueType = std.meta.Tag(Value);
 
 pub fn dump(lambda: *const LambdaBody) void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -490,7 +184,7 @@ test "basic instruction test" {
     var lambda: BytecodeLambda = undefined;
     lambda.context = .{ .items = &.{}, .capacity = 0 };
     lambda.body = &lambda_body;
-    var frame: Frame = undefined;
+    var frame: VM.Frame = undefined;
     frame.instruction_offset = 0;
     frame.body = lambda.body;
 
@@ -499,7 +193,7 @@ test "basic instruction test" {
     var machine: VM = undefined;
     machine.allocator = allocator;
     machine.active_frame = frame;
-    machine.call_stack = std.ArrayList(Frame).init(allocator);
+    machine.call_stack = std.ArrayList(VM.Frame).init(allocator);
     machine.stack = std.ArrayList(Value).init(allocator);
 
     try machine.execute();
