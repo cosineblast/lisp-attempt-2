@@ -61,6 +61,12 @@ pub const LambdaBody = struct { //
             body.ref_count -= 1;
         }
     }
+
+    pub fn up(body: *LambdaBody) void {
+        std.debug.assert(body.ref_count > 0);
+
+        body.ref_count += 1;
+    }
 };
 
 pub const BytecodeLambda = struct {
@@ -128,13 +134,11 @@ pub const VM = struct {
     pub fn deinit(self: *Self) void {
         self.stack.deinit();
         self.call_stack.deinit();
-
-        if (self.active_frame) |frame| {
-            frame.body.down(self.allocator);
-        }
     }
 
     pub fn eval(self: *Self, body: *LambdaBody) !Value {
+        std.debug.assert(self.active_frame == null);
+
         self.active_frame = .{ .body = body, .instruction_offset = 0 };
 
         const before = self.stack.items.len;
@@ -142,6 +146,8 @@ pub const VM = struct {
         try self.execute();
 
         std.debug.assert(self.stack.items.len == before + 1);
+
+        self.active_frame = null;
 
         return self.stack.pop();
     }
@@ -175,7 +181,7 @@ pub const VM = struct {
                     try self.stack.append(self.stack.items[self.stack.items.len - 1 - offset.offset]);
                 },
                 .jf => |offset| {
-                    std.debug.print("> jf {}\n", .{offset.offset});
+                    std.debug.print("> jf +{}\n", .{offset.offset});
 
                     const top = self.stack.pop();
 
@@ -188,17 +194,19 @@ pub const VM = struct {
                     }
                 },
                 .jmp => |offset| {
-                    std.debug.print("> jmp {}\n", .{offset.offset});
+                    std.debug.print("> jmp +{}\n", .{offset.offset});
                     std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= limit);
 
                     self.active_frame.?.instruction_offset -= 1;
                     self.active_frame.?.instruction_offset += offset.offset;
                 },
                 .load => |target| {
-                    std.debug.print("> load {}\n", .{target.id});
+                    std.debug.print("> load @{}\n", .{target.id});
                     try self.stack.append(self.active_frame.?.body.immediate_table[target.id]);
                 },
                 .loadf => |info| {
+                    std.debug.print("> loadf @{}\n", .{info.id});
+
                     const body = self.active_frame.?.body.other_bodies[info.id];
 
                     const function = try self.allocator.create(BytecodeLambda);
