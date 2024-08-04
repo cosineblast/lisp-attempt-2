@@ -23,7 +23,7 @@ pub fn translate(node: *ParseNode, allocator: Allocator) Error!*Expression {
                         return translateBegin(node, allocator);
                     } else if (std.mem.eql(u8, "if", call.item.symbol)) {
                         return translateIf(node, allocator);
-                    } else if (std.mem.eql(u8, "let", call.item.symbol)) {
+                    } else if (std.mem.eql(u8, "let*", call.item.symbol)) {
                         return translateLet(node, allocator);
                     } else if (std.mem.eql(u8, "lambda", call.item.symbol)) {
                         return translateLambda(node, allocator);

@@ -185,7 +185,7 @@ fn isSymbolCharacter(char: u8) bool {
         return true;
     }
 
-    const specials = [_]u8{ '+', '-', '_', '@', '!', '$', '%' };
+    const specials = [_]u8{ '+', '-', '*', '/', '.', ',', '|', '_', '@', '!', '$', '%' };
 
     for (specials) |special| {
         if (special == char) {
