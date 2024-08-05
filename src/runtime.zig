@@ -162,41 +162,18 @@ test "basic instruction test" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var b = LambdaBuilder.init(allocator);
-    const nah = b.addImmediate(.{ .boolean = false });
-    const ten = b.addImmediate(.{ .integer = 10 });
-    const twenty = b.addImmediate(.{ .integer = 20 });
+    const example = "(let* x 10 x)";
 
-    try b.addInstruction(Instruction{ .load = .{ .id = ten } });
-    try b.addInstruction(Instruction{ .load = .{ .id = twenty } });
-    try b.addInstruction(Instruction{ .load = .{ .id = nah } });
-    try b.addInstruction(Instruction{ .jf = .{ .offset = 4 } });
-    try b.addInstruction(Instruction{ .pick = .{ .offset = 1 } });
-    try b.addInstruction(Instruction{ .rip = .{ .keep = 1, .drop = 2 } });
-    try b.addInstruction(Instruction{ .jmp = .{ .offset = 1 } });
-    try b.addInstruction(Instruction{ .rip = .{
-        .drop = 1,
-        .keep = 1,
-    } });
-    try b.addInstruction(Instruction.nop);
+    const compilation = @import("compilation.zig");
+    const tree = try parsing.parse(example, allocator);
+    const expr = try compilation.translation.translate(tree, allocator);
 
-    var lambda_body = b.build();
-    var lambda: BytecodeLambda = undefined;
-    lambda.context = .{ .items = &.{}, .capacity = 0 };
-    lambda.body = &lambda_body;
-    var frame: VM.Frame = undefined;
-    frame.instruction_offset = 0;
-    frame.body = lambda.body;
+    const compiled = try compilation.compile(expr, allocator);
 
-    dump(lambda.body);
+    var vm = try VM.init(allocator);
+    defer vm.deinit();
 
-    var machine: VM = undefined;
-    machine.allocator = allocator;
-    machine.active_frame = frame;
-    machine.call_stack = std.ArrayList(VM.Frame).init(allocator);
-    machine.stack = std.ArrayList(Value).init(allocator);
+    const result = try vm.eval(compiled);
 
-    try machine.execute();
-
-    try std.testing.expectEqual(20, machine.stack.items[0].integer);
+    try std.testing.expectEqual(result.integer, 10);
 }

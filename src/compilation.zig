@@ -422,7 +422,7 @@ test "translation does not fail" {
         .{ "(begin (f 10) false)", .begin_expression },
         .{ "(if true 1 2)", .if_expresssion },
         .{ "(((f 10) 20) 30)", .function_call },
-        .{ "(let x 10 (+ x 10))", .let_expression },
+        .{ "(let* x 10 (+ x 10))", .let_expression },
         .{ "(lambda (x y z) (+ x y z))", .lambda },
     };
 
