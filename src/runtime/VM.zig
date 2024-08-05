@@ -19,7 +19,7 @@ stack: std.ArrayList(Value),
 call_stack: std.ArrayList(Frame),
 allocator: std.mem.Allocator,
 active_frame: ?Frame,
-globals: std.ArrayList(Tuple(&.{ []const u8, Value })),
+globals: std.StringHashMap(Value),
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     var self = Self{ //
@@ -27,7 +27,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         .stack = std.ArrayList(Value).init(allocator),
         .call_stack = std.ArrayList(Frame).init(allocator),
         .active_frame = null,
-        .globals = std.ArrayList(Tuple(&.{ []const u8, Value })).init(allocator),
+        .globals = std.StringHashMap(Value).init(allocator),
     };
 
     try self.addBuiltins();
@@ -36,18 +36,18 @@ pub fn init(allocator: std.mem.Allocator) !Self {
 }
 
 fn addBuiltins(self: *Self) !void {
-    try self.globals.append(.{
+    try self.globals.put(
         "+",
         .{ .real_function = builtins.add },
-    });
-    try self.globals.append(.{ "-", .{ .real_function = builtins.subtract } });
-    try self.globals.append(.{ "*", .{ .real_function = builtins.multiply } });
-    try self.globals.append(.{ "/", .{ .real_function = builtins.divide } });
-    try self.globals.append(.{ "int?", .{ .real_function = builtins.isInt } });
-    try self.globals.append(.{ "fn?", .{ .real_function = builtins.isFn } });
-    try self.globals.append(.{ "bool?", .{ .real_function = builtins.isBool } });
-    try self.globals.append(.{ "<", .{ .real_function = builtins.lt } });
-    try self.globals.append(.{ ">", .{ .real_function = builtins.gt } });
+    );
+    try self.globals.put("-", .{ .real_function = builtins.subtract });
+    try self.globals.put("*", .{ .real_function = builtins.multiply });
+    try self.globals.put("/", .{ .real_function = builtins.divide });
+    try self.globals.put("int?", .{ .real_function = builtins.isInt });
+    try self.globals.put("fn?", .{ .real_function = builtins.isFn });
+    try self.globals.put("bool?", .{ .real_function = builtins.isBool });
+    try self.globals.put("<", .{ .real_function = builtins.lt });
+    try self.globals.put(">", .{ .real_function = builtins.gt });
 }
 
 pub fn deinit(self: *Self) void {
@@ -144,14 +144,7 @@ fn execute(self: *Self) !void {
             .loadg => |id| {
                 const name = self.active_frame.?.body.global_table[id.id];
 
-                var value_: ?Value = null;
-
-                for (self.globals.items) |it| {
-                    if (std.mem.eql(u8, it.@"0", name)) {
-                        value_ = it.@"1";
-                        break;
-                    }
-                }
+                const value_: ?Value = self.globals.get(name);
 
                 if (value_) |value| {
                     try self.stack.append(value);
