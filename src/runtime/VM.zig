@@ -127,7 +127,7 @@ fn execute(self: *Self) !void {
 
                 const body = self.active_frame.?.body.other_bodies[info.id];
 
-                const function = try self.allocator.create(rt.BytecodeLambda);
+                const function = try self.allocator.create(rt.LambdaObject);
 
                 function.body = body;
                 var context = std.ArrayList(Value).init(self.allocator);

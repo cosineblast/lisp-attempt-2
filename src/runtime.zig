@@ -58,7 +58,7 @@ pub const LambdaBody = struct { //
     }
 };
 
-pub const BytecodeLambda = struct {
+pub const LambdaObject = struct {
     body: *LambdaBody,
     context: std.ArrayListUnmanaged(Value),
 };
@@ -68,7 +68,7 @@ pub const Value = union(enum) {
     list: *ListObject,
     integer: i64,
     boolean: bool,
-    lambda: *BytecodeLambda,
+    lambda: *LambdaObject,
     real_function: *const fn (state: *VM, count: u8) anyerror!void,
 
     pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
