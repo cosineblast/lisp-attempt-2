@@ -50,12 +50,7 @@ pub fn main() !void {
 
         std.debug.print("[REPL] translation:\n{s}\n", .{arr.items});
 
-        var compiler = compilation.Compilation.init(base_allocator);
-        defer compiler.deinit();
-
-        try compiler.compileExpression(expr);
-
-        var body = try compiler.lambda_builder.buildOnHeap();
+        var body = try compilation.compile(expr, base_allocator);
         defer body.down(base_allocator);
 
         std.debug.print("[REPL] compile ok!\n", .{});
