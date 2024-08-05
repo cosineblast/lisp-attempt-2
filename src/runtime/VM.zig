@@ -48,6 +48,7 @@ fn addBuiltins(self: *Self) !void {
     try self.globals.put("bool?", .{ .real_function = builtins.isBool });
     try self.globals.put("<", .{ .real_function = builtins.lt });
     try self.globals.put(">", .{ .real_function = builtins.gt });
+    try self.globals.put("sample-str", .{ .real_function = builtins.sample_str });
 }
 
 pub fn deinit(self: *Self) void {

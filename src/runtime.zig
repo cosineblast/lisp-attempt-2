@@ -61,6 +61,22 @@ pub const LambdaBody = struct { //
 pub const LambdaObject = struct {
     body: *LambdaBody,
     context: std.ArrayListUnmanaged(Value),
+    // gc tag
+};
+
+pub const StringContent = struct {
+    items: []const u8,
+    // gc tag
+};
+
+pub const StringObject = struct { //
+    content: *StringContent,
+    offset: usize,
+    len: usize,
+
+    pub fn items(self: *StringObject) []const u8 {
+        return self.content.items[self.offset .. self.offset + self.len];
+    }
 };
 
 pub const Value = union(enum) {
@@ -69,6 +85,8 @@ pub const Value = union(enum) {
     integer: i64,
     boolean: bool,
     lambda: *LambdaObject,
+    string: *StringObject,
+
     real_function: *const fn (state: *VM, count: u8) anyerror!void,
 
     pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -90,6 +108,9 @@ pub const Value = union(enum) {
             },
             .list => {
                 try writer.print("(...)", .{});
+            },
+            .string => |str| {
+                try writer.print("\"{s}\"", .{str.items()});
             },
             .nil => {
                 try writer.print("nil", .{});
@@ -120,7 +141,7 @@ pub fn dump(lambda: *const LambdaBody) void {
 
     for (0..lambda.immediate_count) |i| {
         std.debug.print("{}: ", .{i});
-        print_value(&lambda.immediate_table[i]);
+        std.debug.print("{}", .{lambda.immediate_table[i]});
         std.debug.print("\n", .{});
     }
 
@@ -132,29 +153,6 @@ pub fn dump(lambda: *const LambdaBody) void {
     }
 
     std.debug.print("}}\n", .{});
-}
-
-fn print_value(value: *const Value) void {
-    switch (value.*) {
-        .integer => |i| {
-            std.debug.print("{}", .{i});
-        },
-        .boolean => |x| {
-            std.debug.print("{}", .{x});
-        },
-        .lambda => {
-            std.debug.print("<bfn>", .{});
-        },
-        .real_function => {
-            std.debug.print("<cfn>", .{});
-        },
-        .list => {
-            std.debug.print("(...)", .{});
-        },
-        .nil => {
-            std.debug.print("nil", .{});
-        },
-    }
 }
 
 test "basic instruction test" {

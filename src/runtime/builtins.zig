@@ -2,6 +2,8 @@ const std = @import("std");
 
 const VM = @import("VM.zig");
 
+const rt = @import("../runtime.zig");
+
 pub fn add(vm: *VM, arg_count: u8) anyerror!void {
     var result: i64 = 0;
     var count: u8 = 0;
@@ -183,4 +185,27 @@ pub fn gt(vm: *VM, arg_count: u8) anyerror!void {
     const result = left.integer > right.integer;
 
     try vm.stack.append(.{ .boolean = result });
+}
+
+pub fn sample_str(vm: *VM, arg_count: u8) anyerror!void {
+    if (arg_count != 0) {
+        return error.ArityError;
+    }
+
+    const slice = try vm.allocator.alloc(u8, 4);
+    errdefer vm.allocator.free(slice);
+
+    std.mem.copyForwards(u8, slice, "leak");
+
+    const content = try vm.allocator.create(rt.StringContent);
+    errdefer vm.allocator.destroy(content);
+    content.* = .{ .items = slice };
+
+    const str = rt.StringObject{ .content = content, .len = 4, .offset = 0 };
+
+    const result = try vm.allocator.create(rt.StringObject);
+    result.* = str;
+    errdefer vm.allocator.destroy(result);
+
+    try vm.stack.append(.{ .string = result });
 }
