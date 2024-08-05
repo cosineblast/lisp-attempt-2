@@ -394,6 +394,17 @@ pub const Compilation = struct { //
     }
 };
 
+pub fn compile(expression: *Expression, allocator: Allocator) Compilation.Error!*rt.LambdaBody {
+    var compiler = Compilation.init(allocator);
+
+    try compiler.compileExpression(expression);
+
+    var body = try compiler.lambda_builder.buildOnHeap();
+    errdefer body.down(allocator);
+
+    return body;
+}
+
 test "translation does not fail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
