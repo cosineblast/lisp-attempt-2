@@ -113,9 +113,6 @@ pub const Compilation = struct { //
     const Self = @This();
 
     const Binding = struct { name: []const u8, frame_offset: usize };
-
-    const IntIdPair = struct { value: i64, id: u8 };
-
     const Error = error{ OutOfMemory, OtherCompilationError };
 
     const OtherError = union(enum) {
@@ -125,9 +122,11 @@ pub const Compilation = struct { //
     allocator: Allocator,
     lambda_builder: LambdaBuilder,
     frame_size: usize,
+
     local_bindings: ArrayList(Binding),
-    integer_literals: ArrayList(IntIdPair),
-    global_table: ArrayList(Tuple(&.{ []const u8, u8 })),
+    integer_literals: std.AutoHashMap(i64, u8),
+    global_ref_table: std.StringHashMap(u8),
+
     true_literal_id: ?u8,
     false_literal_id: ?u8,
     nil_literal_id: ?u8,
@@ -139,8 +138,8 @@ pub const Compilation = struct { //
             .lambda_builder = LambdaBuilder.init(allocator),
             .frame_size = 0,
             .local_bindings = ArrayList(Binding).init(allocator),
-            .integer_literals = ArrayList(IntIdPair).init(allocator),
-            .global_table = ArrayList(Tuple(&.{ []const u8, u8 })).init(allocator),
+            .integer_literals = std.AutoHashMap(i64, u8).init(allocator),
+            .global_ref_table = std.StringHashMap(u8).init(allocator),
             .true_literal_id = null,
             .false_literal_id = null,
             .nil_literal_id = null,
@@ -151,7 +150,7 @@ pub const Compilation = struct { //
     pub fn deinit(self: *Self) void {
         self.local_bindings.deinit();
         self.integer_literals.deinit();
-        self.global_table.deinit();
+        self.global_ref_table.deinit();
     }
 
     // The expected behavior of all compile functions, is that
@@ -200,24 +199,18 @@ pub const Compilation = struct { //
     }
 
     fn compileIntegerLiteral(self: *Self, value: i64) Error!void {
-        var id: ?u8 = null;
-        for (self.integer_literals.items) |literal| {
-            if (literal.value == value) {
-                id = literal.id;
-                break;
-            }
-        }
+        const id_: ?u8 = self.integer_literals.get(value);
 
-        id = id orelse blk: {
+        const id = id_ orelse blk: {
             const next = self.lambda_builder.addImmediate(.{ .integer = value });
 
-            try self.integer_literals.append(.{ .id = next, .value = value });
+            try self.integer_literals.put(value, next);
 
             break :blk next;
         };
 
         try self.lambda_builder.addInstruction(.{ //
-            .load = .{ .id = id.? },
+            .load = .{ .id = id },
         });
     }
 
@@ -229,18 +222,11 @@ pub const Compilation = struct { //
 
             try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(stack_offset) } });
         } else {
-            var id_: ?u8 = null;
-
-            for (self.global_table.items) |it| {
-                if (std.mem.eql(u8, it.@"0", name)) {
-                    id_ = it.@"1";
-                    break;
-                }
-            }
+            const id_: ?u8 = self.global_ref_table.get(name);
 
             const id = id_ orelse blk: {
                 const id = self.lambda_builder.addGlobalReference(name);
-                try self.global_table.append(.{ name, id });
+                try self.global_ref_table.put(name, id);
                 break :blk id;
             };
 
@@ -365,12 +351,12 @@ pub const Compilation = struct { //
             .lambda_builder = LambdaBuilder.init(self.allocator),
             .frame_size = bindings.items.len,
             .local_bindings = bindings,
-            .integer_literals = ArrayList(IntIdPair).init(self.allocator),
+            .integer_literals = std.AutoHashMap(i64, u8).init(self.allocator),
             .true_literal_id = null,
             .false_literal_id = null,
             .nil_literal_id = null,
             .issue = null,
-            .global_table = ArrayList(Tuple(&.{ []const u8, u8 })).init(self.allocator),
+            .global_ref_table = std.StringHashMap(u8).init(self.allocator),
         };
 
         next.lambda_builder.setParameterCount(@intCast(expr.parameters.len));
