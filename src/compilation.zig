@@ -396,6 +396,7 @@ pub const Compilation = struct { //
 
 pub fn compile(expression: *Expression, allocator: Allocator) Compilation.Error!*rt.LambdaBody {
     var compiler = Compilation.init(allocator);
+    defer compiler.deinit();
 
     try compiler.compileExpression(expression);
 

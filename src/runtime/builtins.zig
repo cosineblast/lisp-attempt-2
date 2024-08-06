@@ -207,5 +207,11 @@ pub fn sample_str(vm: *VM, arg_count: u8) anyerror!void {
     result.* = str;
     errdefer vm.allocator.destroy(result);
 
+    // watch out! registering a value in the GC may cause a gc,
+    // we must put this in the right order!
+
+    try vm.registerGC(.{ .string = result });
+    try vm.registerGC(.{ .string_content = content });
+
     try vm.stack.append(.{ .string = result });
 }

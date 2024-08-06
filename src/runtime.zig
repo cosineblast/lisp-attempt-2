@@ -58,21 +58,26 @@ pub const LambdaBody = struct { //
     }
 };
 
-pub const LambdaObject = struct {
+const GCTag = bool;
+const GCTagDefault = false;
+
+pub const LambdaObject = struct { //
     body: *LambdaBody,
     context: std.ArrayListUnmanaged(Value),
-    // gc tag
+    tag: GCTag = GCTagDefault,
 };
 
 pub const StringContent = struct {
+    // TODO: allocate items in-place with struct, as a flexible array
     items: []const u8,
-    // gc tag
+    tag: GCTag = GCTagDefault,
 };
 
 pub const StringObject = struct { //
     content: *StringContent,
     offset: usize,
     len: usize,
+    tag: GCTag = GCTagDefault,
 
     pub fn items(self: *StringObject) []const u8 {
         return self.content.items[self.offset .. self.offset + self.len];

@@ -15,11 +15,22 @@ pub const Frame = struct { //
     instruction_offset: usize,
 };
 
+const GC_LIMIT = 100;
+
 stack: std.ArrayList(Value),
 call_stack: std.ArrayList(Frame),
 allocator: std.mem.Allocator,
 active_frame: ?Frame,
 globals: std.StringHashMap(Value),
+
+gc_values: std.ArrayList(GCValue),
+
+// it's hard to remove values from gc_values, so we move
+// everything to gc_values_hack, of similar capacity,
+// clear gc_values
+gc_values_hack: std.ArrayList(GCValue),
+
+gc_counter: u32 = GC_LIMIT,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     var self = Self{ //
@@ -28,6 +39,8 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         .call_stack = std.ArrayList(Frame).init(allocator),
         .active_frame = null,
         .globals = std.StringHashMap(Value).init(allocator),
+        .gc_values = std.ArrayList(GCValue).init(allocator),
+        .gc_values_hack = std.ArrayList(GCValue).init(allocator),
     };
 
     try self.addBuiltins();
@@ -52,6 +65,7 @@ fn addBuiltins(self: *Self) !void {
 }
 
 pub fn deinit(self: *Self) void {
+    self.destroyGCValues();
     self.stack.deinit();
     self.call_stack.deinit();
     self.globals.deinit();
@@ -131,6 +145,9 @@ fn execute(self: *Self) !void {
                 const function = try self.allocator.create(rt.LambdaObject);
 
                 function.body = body;
+                body.up();
+                errdefer body.down(self.allocator);
+
                 var context = std.ArrayList(Value).init(self.allocator);
                 function.context = context.moveToUnmanaged();
 
@@ -140,7 +157,10 @@ fn execute(self: *Self) !void {
 
                 std.mem.reverse(Value, function.context.items);
 
-                try self.stack.append(.{ .lambda = function });
+                const value: Value = .{ .lambda = function };
+
+                try self.registerGC(.{ .lambda = function });
+                try self.stack.append(value);
             },
             .loadg => |id| {
                 const name = self.active_frame.?.body.global_table[id.id];
@@ -217,4 +237,123 @@ fn execute(self: *Self) !void {
             },
         }
     }
+}
+
+pub fn registerGC(self: *Self, value: GCValue) !void {
+    try self.gc_values.append(value);
+
+    self.gc_counter -= 1;
+
+    if (self.gc_counter == 0) {
+        try self.gc();
+        self.gc_counter = GC_LIMIT;
+    }
+}
+
+fn gc(self: *Self) !void {
+    for (self.stack.items) |item| {
+        tag(item);
+    }
+
+    var iterator = self.globals.iterator();
+
+    while (iterator.next()) |entry| {
+        tag(entry.value_ptr.*);
+    }
+
+    // TODO: use data structure with fast append
+    // and fast element removal
+
+    for (self.gc_values.items) |item| {
+        if (!item.fetchResetTag()) {
+            item.die(self.allocator);
+        } else {
+            try self.gc_values_hack.append(item);
+        }
+    }
+
+    self.gc_values.items.len = 0;
+
+    std.mem.swap(std.ArrayList(GCValue), &self.gc_values, &self.gc_values_hack);
+}
+
+const GCValue = union(enum) {
+    string: *rt.StringObject,
+    string_content: *rt.StringContent,
+    lambda: *rt.LambdaObject,
+
+    fn from(value: Value) ?GCValue {
+        switch (value) {
+            .string => |str| {
+                return .{ .string = str };
+            },
+            .lambda => |lambda| {
+                return .{ .lambda = lambda };
+            },
+        }
+    }
+
+    /// Returns the value of the current tag of the value, and
+    /// sets the tag to false
+    fn fetchResetTag(self: GCValue) bool {
+        switch (self) {
+            .string => |s| {
+                const it = s.tag;
+                s.tag = false;
+                return it;
+            },
+            .string_content => |s| {
+                const it = s.tag;
+                s.tag = false;
+                return it;
+            },
+            .lambda => |l| {
+                const it = l.tag;
+                l.tag = false;
+                return it;
+            },
+        }
+    }
+
+    fn die(self: GCValue, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .string => |s| {
+                allocator.destroy(s);
+            },
+            .string_content => |s| {
+                allocator.free(s.items);
+                allocator.destroy(s);
+            },
+            .lambda => |l| {
+                l.body.down(allocator);
+                l.context.deinit(allocator);
+                allocator.destroy(l);
+            },
+        }
+    }
+};
+
+fn tag(value: Value) void {
+    switch (value) {
+        .string => |str| {
+            str.tag = true;
+            str.content.tag = true;
+        },
+        .lambda => |lambda| {
+            lambda.tag = true;
+            for (lambda.context.items) |item| {
+                tag(item);
+            }
+        },
+        else => {},
+    }
+}
+
+fn destroyGCValues(self: *Self) void {
+    for (self.gc_values.items) |item| {
+        item.die(self.allocator);
+    }
+
+    self.gc_values_hack.deinit();
+    self.gc_values.deinit();
 }
