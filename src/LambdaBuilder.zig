@@ -1,7 +1,6 @@
 const std = @import("std");
 const rt = @import("runtime.zig");
 
-const Value = rt.Value;
 const Instruction = rt.Instruction;
 const InstructionType = rt.InstructionType;
 const LambdaBody = rt.LambdaBody;
@@ -12,7 +11,7 @@ const LambdaBody = rt.LambdaBody;
 const Self = @This();
 
 code: std.ArrayList(Instruction),
-immediate_table: [256]Value,
+immediate_table: [256]LambdaBody.Immediate,
 other_bodies: [256]*LambdaBody,
 global_table: [256][]const u8,
 next_value_index: u8,
@@ -61,7 +60,7 @@ pub fn setInstruction(self: *Self, offset: usize, instruction: Instruction) void
     self.code.items[offset] = instruction;
 }
 
-pub fn addImmediate(self: *Self, value: Value) u8 {
+pub fn addImmediate(self: *Self, value: LambdaBody.Immediate) u8 {
     const current = self.next_value_index;
     self.immediate_table[current] = value;
     self.next_value_index += 1;

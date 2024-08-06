@@ -192,26 +192,7 @@ pub fn sample_str(vm: *VM, arg_count: u8) anyerror!void {
         return error.ArityError;
     }
 
-    const slice = try vm.allocator.alloc(u8, 4);
-    errdefer vm.allocator.free(slice);
-
-    std.mem.copyForwards(u8, slice, "leak");
-
-    const content = try vm.allocator.create(rt.StringContent);
-    errdefer vm.allocator.destroy(content);
-    content.* = .{ .items = slice };
-
-    const str = rt.StringObject{ .content = content, .len = 4, .offset = 0 };
-
-    const result = try vm.allocator.create(rt.StringObject);
-    result.* = str;
-    errdefer vm.allocator.destroy(result);
-
-    // watch out! registering a value in the GC may cause a gc,
-    // we must put this in the right order!
-
-    try vm.registerGC(.{ .string = result });
-    try vm.registerGC(.{ .string_content = content });
+    const result = try vm.registerString("leak");
 
     try vm.stack.append(.{ .string = result });
 }

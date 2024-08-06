@@ -27,8 +27,15 @@ pub const InstructionType = std.meta.Tag(Instruction);
 pub const ListObject = struct { item: Value, next: ?*ListObject };
 
 pub const LambdaBody = struct { //
-    code: std.ArrayListUnmanaged(Instruction), //
-    immediate_table: [256]Value,
+    pub const Immediate = union(enum) { //
+        integer: i64,
+        boolean: bool,
+        string: std.ArrayListUnmanaged(u8),
+        nil,
+    };
+
+    code: std.ArrayListUnmanaged(Instruction),
+    immediate_table: [256]Immediate,
     immediate_count: usize,
     parameter_count: ?u8,
     other_bodies: [256]*LambdaBody,

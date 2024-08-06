@@ -23,6 +23,8 @@ allocator: std.mem.Allocator,
 active_frame: ?Frame,
 globals: std.StringHashMap(Value),
 
+string_literals: std.StringHashMap(*rt.StringObject),
+
 gc_values: std.ArrayList(GCValue),
 
 // it's hard to remove values from gc_values, so we move
@@ -41,6 +43,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         .globals = std.StringHashMap(Value).init(allocator),
         .gc_values = std.ArrayList(GCValue).init(allocator),
         .gc_values_hack = std.ArrayList(GCValue).init(allocator),
+        .string_literals = std.StringHashMap(*rt.StringObject).init(allocator),
     };
 
     try self.addBuiltins();
@@ -139,7 +142,25 @@ fn execute(self: *Self) !void {
             },
             .load => |target| {
                 std.debug.print("> load @{}\n", .{target.id});
-                try self.stack.append(self.active_frame.?.body.immediate_table[target.id]);
+
+                const immediate = self.active_frame.?.body.immediate_table[target.id];
+
+                const value: Value = switch (immediate) {
+                    .integer => |i| .{ .integer = i },
+                    .boolean => |b| .{ .boolean = b },
+                    .string => |s| blk: {
+                        if (self.string_literals.get(s.items)) |object| {
+                            break :blk .{ .string = object };
+                        } else {
+                            const object = try self.registerString(s.items);
+                            try self.string_literals.put(s.items, object);
+                            break :blk .{ .string = object };
+                        }
+                    },
+                    .nil => .nil,
+                };
+
+                try self.stack.append(value);
             },
             .loadf => |info| {
                 std.debug.print("> loadf @{}\n", .{info.id});
@@ -257,10 +278,18 @@ fn gc(self: *Self) !void {
         tag(item);
     }
 
-    var iterator = self.globals.iterator();
+    {
+        var iterator = self.globals.iterator();
+
+        while (iterator.next()) |entry| {
+            tag(entry.value_ptr.*);
+        }
+    }
+
+    var iterator = self.string_literals.iterator();
 
     while (iterator.next()) |entry| {
-        tag(entry.value_ptr.*);
+        tag(.{ .string = entry.value_ptr.* });
     }
 
     // TODO: use data structure with fast append
@@ -358,4 +387,32 @@ fn destroyGCValues(self: *Self) void {
 
     self.gc_values_hack.deinit();
     self.gc_values.deinit();
+}
+
+pub fn registerString(self: *Self, source: []const u8) !*rt.StringObject {
+    const slice = try self.allocator.alloc(u8, source.len);
+    errdefer self.allocator.free(slice);
+
+    std.mem.copyForwards(u8, slice, source);
+
+    const content = try self.allocator.create(rt.StringContent);
+    errdefer self.allocator.destroy(content);
+    content.* = .{ .items = slice };
+
+    const str = rt.StringObject{ .content = content, .len = 4, .offset = 0 };
+
+    const result = try self.allocator.create(rt.StringObject);
+    result.* = str;
+    errdefer self.allocator.destroy(result);
+
+    // we do this to make sure the second gc doesn't destroy the string object.
+    // when we regiter it for the second time
+    try self.stack.append(.{ .string = result });
+
+    try self.registerGC(.{ .string = result });
+    try self.registerGC(.{ .string_content = content });
+
+    _ = self.stack.pop();
+
+    return result;
 }

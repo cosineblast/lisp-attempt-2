@@ -16,6 +16,8 @@ pub const translation = @import("compilation/translation.zig");
 
 const LambdaBuilder = @import("LambdaBuilder.zig");
 
+const Immediate = rt.LambdaBody.Immediate;
+
 pub const Expression = union(enum) {
     const Call = struct { name: *Expression, arguments: []*Expression };
     const If = struct { condition: *Expression, then_branch: *Expression, else_branch: *Expression };
@@ -124,12 +126,12 @@ pub const Compilation = struct { //
     frame_size: usize,
 
     local_bindings: ArrayList(Binding),
-    integer_literals: std.AutoHashMap(i64, u8),
-    global_ref_table: std.StringHashMap(u8),
+    integer_literals: std.AutoHashMap(i64, u16),
+    global_ref_table: std.StringHashMap(u16),
 
-    true_literal_id: ?u8,
-    false_literal_id: ?u8,
-    nil_literal_id: ?u8,
+    true_literal_id: ?u16,
+    false_literal_id: ?u16,
+    nil_literal_id: ?u16,
     issue: ?OtherError,
 
     pub fn init(allocator: Allocator) Compilation {
@@ -138,8 +140,8 @@ pub const Compilation = struct { //
             .lambda_builder = LambdaBuilder.init(allocator),
             .frame_size = 0,
             .local_bindings = ArrayList(Binding).init(allocator),
-            .integer_literals = std.AutoHashMap(i64, u8).init(allocator),
-            .global_ref_table = std.StringHashMap(u8).init(allocator),
+            .integer_literals = std.AutoHashMap(i64, u16).init(allocator),
+            .global_ref_table = std.StringHashMap(u16).init(allocator),
             .true_literal_id = null,
             .false_literal_id = null,
             .nil_literal_id = null,
@@ -199,7 +201,7 @@ pub const Compilation = struct { //
     }
 
     fn compileIntegerLiteral(self: *Self, value: i64) Error!void {
-        const id_: ?u8 = self.integer_literals.get(value);
+        const id_: ?u16 = self.integer_literals.get(value);
 
         const id = id_ orelse blk: {
             const next = self.lambda_builder.addImmediate(.{ .integer = value });
@@ -222,7 +224,7 @@ pub const Compilation = struct { //
 
             try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(stack_offset) } });
         } else {
-            const id_: ?u8 = self.global_ref_table.get(name);
+            const id_: ?u16 = self.global_ref_table.get(name);
 
             const id = id_ orelse blk: {
                 const id = self.lambda_builder.addGlobalReference(name);
@@ -305,7 +307,7 @@ pub const Compilation = struct { //
         _ = self.local_bindings.pop();
     }
 
-    fn compileSingleton(self: *Self, id_ptr: *?u8, value: rt.Value) Error!void {
+    fn compileSingleton(self: *Self, id_ptr: *?u16, value: Immediate) Error!void {
         const id = blk: {
             if (id_ptr.*) |it| {
                 break :blk it;
@@ -351,12 +353,12 @@ pub const Compilation = struct { //
             .lambda_builder = LambdaBuilder.init(self.allocator),
             .frame_size = bindings.items.len,
             .local_bindings = bindings,
-            .integer_literals = std.AutoHashMap(i64, u8).init(self.allocator),
+            .integer_literals = std.AutoHashMap(i64, u16).init(self.allocator),
             .true_literal_id = null,
             .false_literal_id = null,
             .nil_literal_id = null,
             .issue = null,
-            .global_ref_table = std.StringHashMap(u8).init(self.allocator),
+            .global_ref_table = std.StringHashMap(u16).init(self.allocator),
         };
 
         next.lambda_builder.setParameterCount(@intCast(expr.parameters.len));
