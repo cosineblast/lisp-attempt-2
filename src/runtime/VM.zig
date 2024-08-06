@@ -120,17 +120,21 @@ fn execute(self: *Self) !void {
 
                 if (top == rt.ValueType.boolean and top.boolean == false) {
                     std.debug.print(">  jumped\n", .{});
-                    std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
 
                     self.active_frame.?.instruction_offset -= 1;
+
+                    std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
+
                     self.active_frame.?.instruction_offset += offset.offset;
                 }
             },
             .jmp => |offset| {
                 std.debug.print("> jmp +{}\n", .{offset.offset});
-                std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
 
                 self.active_frame.?.instruction_offset -= 1;
+
+                std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
+
                 self.active_frame.?.instruction_offset += offset.offset;
             },
             .load => |target| {
@@ -192,8 +196,6 @@ fn execute(self: *Self) !void {
                     count += 1;
                 }
 
-                // TODO: check if it is ok to touch this directly,
-                // or if there is a function in the standard library to do this.
                 self.stack.items.len -= drop;
             },
             .call => |info| {
