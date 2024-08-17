@@ -4,6 +4,21 @@ const VM = @import("VM.zig");
 
 const rt = @import("../runtime.zig");
 
+pub fn isZero(vm: *VM, arg_count: u8) anyerror!void {
+    if (arg_count != 1) {
+        return error.ArityError;
+    }
+
+    const value = vm.stack.pop();
+
+    const result = switch (value) {
+        .integer => |i| i == 0,
+        else => false,
+    };
+
+    try vm.stack.append(.{ .boolean = result });
+}
+
 pub fn add(vm: *VM, arg_count: u8) anyerror!void {
     var result: i64 = 0;
     var count: u8 = 0;

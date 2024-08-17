@@ -52,13 +52,11 @@ pub fn init(allocator: std.mem.Allocator) !Self {
 }
 
 fn addBuiltins(self: *Self) !void {
-    try self.globals.put(
-        "+",
-        .{ .real_function = builtins.add },
-    );
+    try self.globals.put("+", .{ .real_function = builtins.add });
     try self.globals.put("-", .{ .real_function = builtins.subtract });
     try self.globals.put("*", .{ .real_function = builtins.multiply });
     try self.globals.put("/", .{ .real_function = builtins.divide });
+    try self.globals.put("zero?", .{ .real_function = builtins.isZero });
     try self.globals.put("int?", .{ .real_function = builtins.isInt });
     try self.globals.put("fn?", .{ .real_function = builtins.isFn });
     try self.globals.put("bool?", .{ .real_function = builtins.isBool });
