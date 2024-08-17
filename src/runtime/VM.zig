@@ -92,36 +92,21 @@ fn execute(self: *Self) !void {
     while (self.active_frame.?.instruction_offset < self.active_frame.?.body.code.items.len) {
         const instruction = self.active_frame.?.body.code.items[self.active_frame.?.instruction_offset];
 
-        {
-            std.debug.print("[{}]s: ", .{self.stack.items.len});
-            var i = self.stack.items.len;
-            var count: usize = 0;
-            while (i != 0 and count < 8) {
-                i -= 1;
-                std.debug.print("{} ", .{self.stack.items[i]});
-                count += 1;
-            }
-            std.debug.print("\n", .{});
-        }
+        try self.printStack();
+        try self.printInstruction(instruction);
 
         self.active_frame.?.instruction_offset += 1;
 
         switch (instruction) {
             .pick => |offset| {
-                std.debug.print("> pick {}\n", .{offset.offset});
-
                 std.debug.assert(offset.offset < self.stack.items.len);
 
                 try self.stack.append(self.stack.items[self.stack.items.len - 1 - offset.offset]);
             },
             .jf => |offset| {
-                std.debug.print("> jf +{}\n", .{offset.offset});
-
                 const top = self.stack.pop();
 
                 if (top == rt.ValueType.boolean and top.boolean == false) {
-                    std.debug.print(">  jumped\n", .{});
-
                     self.active_frame.?.instruction_offset -= 1;
 
                     std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
@@ -130,8 +115,6 @@ fn execute(self: *Self) !void {
                 }
             },
             .jmp => |offset| {
-                std.debug.print("> jmp +{}\n", .{offset.offset});
-
                 self.active_frame.?.instruction_offset -= 1;
 
                 std.debug.assert(self.active_frame.?.instruction_offset + offset.offset <= self.active_frame.?.body.code.items.len);
@@ -139,8 +122,6 @@ fn execute(self: *Self) !void {
                 self.active_frame.?.instruction_offset += offset.offset;
             },
             .load => |target| {
-                std.debug.print("> load @{}\n", .{target.id});
-
                 const immediate = self.active_frame.?.body.immediate_table[target.id];
 
                 const value: Value = switch (immediate) {
@@ -153,8 +134,6 @@ fn execute(self: *Self) !void {
                 try self.stack.append(value);
             },
             .loadf => |info| {
-                std.debug.print("> loadf @{}\n", .{info.id});
-
                 const body = self.active_frame.?.body.other_bodies[info.id];
 
                 const function = try self.allocator.create(rt.LambdaObject);
@@ -198,8 +177,6 @@ fn execute(self: *Self) !void {
                 try self.stack.append(.nil);
             },
             .rip => |info| {
-                std.debug.print("> rip {} {}\n", .{ info.drop, info.keep });
-
                 std.debug.assert(self.stack.items.len >= info.drop + info.keep);
 
                 // x x k k k
@@ -219,8 +196,6 @@ fn execute(self: *Self) !void {
                 self.stack.items.len -= drop;
             },
             .call => |info| {
-                std.debug.print("> call\n", .{});
-
                 const fn_value = self.stack.pop();
 
                 switch (fn_value) {
@@ -251,14 +226,31 @@ fn execute(self: *Self) !void {
                 unreachable;
             },
             .ret => {
-                std.debug.print("> ret \n", .{});
                 self.active_frame = self.call_stack.pop();
             },
-            .nop => {
-                std.debug.print("> nop \n", .{});
-            },
+            .nop => {},
         }
     }
+}
+
+fn printStack(self: *Self) !void {
+    std.debug.print("stack (len={}) : ", .{self.stack.items.len});
+    var i = self.stack.items.len;
+    var count: usize = 0;
+    while (i != 0 and count < 8) {
+        i -= 1;
+        std.debug.print("{} ", .{self.stack.items[i]});
+        count += 1;
+    }
+    std.debug.print("\n", .{});
+}
+
+fn printInstruction(self: *Self, instruction: rt.Instruction) !void {
+    const offset = self.active_frame.?.instruction_offset;
+
+    std.debug.print("nexti (off={}): ", .{offset});
+    std.json.stringify(instruction, .{}, std.io.getStdErr().writer()) catch @panic("debug write failed");
+    std.debug.print("\n\n", .{});
 }
 
 pub fn intern(self: *Self, symbol: []const u8) !Value {
