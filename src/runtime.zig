@@ -17,6 +17,7 @@ pub const Instruction = union(enum) {
     load: struct { id: u16 },
     loadg: struct { id: u16 },
     loadf: struct { id: u16, in_context: u16 },
+    defg: struct { id: u8 },
     rip: struct { drop: u16, keep: u8 },
     ret,
     nop,

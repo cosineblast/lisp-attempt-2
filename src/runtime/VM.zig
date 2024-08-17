@@ -190,6 +190,15 @@ fn execute(self: *Self) !void {
                     return error.UnknownVariable;
                 }
             },
+            .defg => |it| {
+                const name = self.active_frame.?.body.global_table[it.id];
+
+                const value = self.stack.pop();
+
+                try self.globals.put(name, value);
+
+                try self.stack.append(.nil);
+            },
             .rip => |info| {
                 std.debug.print("> rip {} {}\n", .{ info.drop, info.keep });
 

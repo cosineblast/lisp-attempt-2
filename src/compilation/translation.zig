@@ -27,6 +27,8 @@ pub fn translate(node: *ParseNode, allocator: Allocator) Error!*Expression {
                         return translateLet(node, allocator);
                     } else if (std.mem.eql(u8, "lambda", call.item.symbol)) {
                         return translateLambda(node, allocator);
+                    } else if (std.mem.eql(u8, "def", call.item.symbol)) {
+                        return translateDef(node, allocator);
                     } else {
                         return translateCall(node, allocator);
                     }
@@ -176,6 +178,27 @@ fn translateCall(node: *ParseNode, allocator: Allocator) Error!*Expression {
 
     const result = try allocator.create(Expression);
     result.* = .{ .function_call = .{ .name = function_expr, .arguments = arguments.items } };
+    return result;
+}
+
+fn translateDef(node: *ParseNode, allocator: Allocator) Error!*Expression {
+    const list = node.list;
+
+    const name = parsing.ListNode.nth(list, 1) orelse return error.InvalidSyntax;
+    const value = parsing.ListNode.nth(list, 2) orelse return error.InvalidSyntax;
+
+    if (name.item.* != ParseNodeType.symbol) {
+        return error.InvalidSyntax;
+    }
+
+    if (parsing.ListNode.nth(list, 3) != null) {
+        return error.InvalidSyntax;
+    }
+
+    const value_expr = try translate(value.item, allocator);
+
+    const result = try allocator.create(Expression);
+    result.* = .{ .def_expression = .{ .name = name.item.symbol, .value = value_expr } };
     return result;
 }
 

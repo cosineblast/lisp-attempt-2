@@ -40,6 +40,7 @@ pub const Expression = union(enum) {
 
     begin_expression: []*Expression,
     nil,
+    def_expression: struct { name: []const u8, value: *Expression },
 
     fn onHeap(value: Expression, allocator: Allocator) !*Expression {
         const result = try allocator.create(Expression);
@@ -102,6 +103,9 @@ const analysis = struct {
                 for (expressions) |item| {
                     try findFreeVariables(item, bound, free);
                 }
+            },
+            .def_expression => |it| {
+                try findFreeVariables(it.value, bound, free);
             },
             .integer => {},
             .true_expression => {},
@@ -186,6 +190,11 @@ pub const Compilation = struct { //
                 }
                 try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(expressions.len - 1), .keep = 1 } });
             },
+            .def_expression => |it| {
+                try self.compileExpression(it.value);
+                const id = try self.getGlobal(it.name);
+                try self.lambda_builder.addInstruction(.{ .defg = .{ .id = @intCast(id) } });
+            },
             .true_expression => {
                 try self.compileSingleton(&self.true_literal_id, .{ .boolean = true });
             },
@@ -224,16 +233,18 @@ pub const Compilation = struct { //
 
             try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(stack_offset) } });
         } else {
-            const id_: ?u16 = self.global_ref_table.get(name);
-
-            const id = id_ orelse blk: {
-                const id = self.lambda_builder.addGlobalReference(name);
-                try self.global_ref_table.put(name, id);
-                break :blk id;
-            };
+            const id = try self.getGlobal(name);
 
             try self.lambda_builder.addInstruction(.{ .loadg = .{ .id = @intCast(id) } });
         }
+    }
+
+    fn getGlobal(self: *Self, name: []const u8) !u16 {
+        return self.global_ref_table.get(name) orelse blk: {
+            const id = self.lambda_builder.addGlobalReference(name);
+            try self.global_ref_table.put(name, id);
+            break :blk id;
+        };
     }
 
     fn computeStackOffset(self: *Self, frame_offset: usize) usize {
