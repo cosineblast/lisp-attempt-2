@@ -15,8 +15,13 @@ pub const Frame = struct { //
     instruction_offset: usize,
 };
 
+pub const Settings = struct {
+    verbose: bool = false,
+};
+
 const GC_LIMIT = 100;
 
+settings: Settings,
 stack: std.ArrayList(Value),
 call_stack: std.ArrayList(Frame),
 allocator: std.mem.Allocator,
@@ -35,6 +40,10 @@ gc_values_hack: std.ArrayList(GCValue),
 gc_counter: u32 = GC_LIMIT,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
+    return try initWithSettings(allocator, .{});
+}
+
+pub fn initWithSettings(allocator: std.mem.Allocator, settings: Settings) !Self {
     var self = Self{ //
         .allocator = allocator,
         .stack = std.ArrayList(Value).init(allocator),
@@ -44,6 +53,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         .gc_values = std.ArrayList(GCValue).init(allocator),
         .gc_values_hack = std.ArrayList(GCValue).init(allocator),
         .symbols = std.StringHashMap(*rt.SymbolObject).init(allocator),
+        .settings = settings,
     };
 
     try self.addBuiltins();
@@ -92,8 +102,10 @@ fn execute(self: *Self) !void {
     while (self.active_frame.?.instruction_offset < self.active_frame.?.body.code.items.len) {
         const instruction = self.active_frame.?.body.code.items[self.active_frame.?.instruction_offset];
 
-        try self.printStack();
-        try self.printInstruction(instruction);
+        if (self.settings.verbose) {
+            try self.printStack();
+            try self.printInstruction(instruction);
+        }
 
         self.active_frame.?.instruction_offset += 1;
 
