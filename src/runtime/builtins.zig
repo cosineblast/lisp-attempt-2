@@ -187,12 +187,12 @@ pub fn gt(vm: *VM, arg_count: u8) anyerror!void {
     try vm.stack.append(.{ .boolean = result });
 }
 
-pub fn sample_str(vm: *VM, arg_count: u8) anyerror!void {
+pub fn sample_symbol(vm: *VM, arg_count: u8) anyerror!void {
     if (arg_count != 0) {
         return error.ArityError;
     }
 
-    const result = try vm.registerString("leak");
+    const result = try vm.intern("leak");
 
-    try vm.stack.append(.{ .string = result });
+    try vm.stack.append(result);
 }

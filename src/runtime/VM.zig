@@ -23,7 +23,7 @@ allocator: std.mem.Allocator,
 active_frame: ?Frame,
 globals: std.StringHashMap(Value),
 
-string_literals: std.StringHashMap(*rt.StringObject),
+symbols: std.StringHashMap(*rt.SymbolObject),
 
 gc_values: std.ArrayList(GCValue),
 
@@ -43,7 +43,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         .globals = std.StringHashMap(Value).init(allocator),
         .gc_values = std.ArrayList(GCValue).init(allocator),
         .gc_values_hack = std.ArrayList(GCValue).init(allocator),
-        .string_literals = std.StringHashMap(*rt.StringObject).init(allocator),
+        .symbols = std.StringHashMap(*rt.SymbolObject).init(allocator),
     };
 
     try self.addBuiltins();
@@ -64,7 +64,7 @@ fn addBuiltins(self: *Self) !void {
     try self.globals.put("bool?", .{ .real_function = builtins.isBool });
     try self.globals.put("<", .{ .real_function = builtins.lt });
     try self.globals.put(">", .{ .real_function = builtins.gt });
-    try self.globals.put("sample-str", .{ .real_function = builtins.sample_str });
+    try self.globals.put("sample-symbol", .{ .real_function = builtins.sample_symbol });
 }
 
 pub fn deinit(self: *Self) void {
@@ -148,15 +148,7 @@ fn execute(self: *Self) !void {
                 const value: Value = switch (immediate) {
                     .integer => |i| .{ .integer = i },
                     .boolean => |b| .{ .boolean = b },
-                    .string => |s| blk: {
-                        if (self.string_literals.get(s.items)) |object| {
-                            break :blk .{ .string = object };
-                        } else {
-                            const object = try self.registerString(s.items);
-                            try self.string_literals.put(s.items, object);
-                            break :blk .{ .string = object };
-                        }
-                    },
+                    .symbol => |s| try self.intern(s.items),
                     .nil => .nil,
                 };
 
@@ -262,6 +254,27 @@ fn execute(self: *Self) !void {
     }
 }
 
+pub fn intern(self: *Self, symbol: []const u8) !Value {
+    if (self.symbols.get(symbol)) |object| {
+        return .{ .symbol = object };
+    } else {
+        var content = try std.ArrayList(u8).initCapacity(self.allocator, symbol.len);
+        errdefer content.deinit();
+
+        try content.appendSlice(symbol);
+
+        const object = try self.allocator.create(rt.SymbolObject);
+        errdefer self.allocator.destroy(object);
+
+        object.* = .{ .content = content.items };
+
+        try self.symbols.put(object.content, object);
+
+        const value: Value = .{ .symbol = object };
+        return value;
+    }
+}
+
 pub fn registerGC(self: *Self, value: GCValue) !void {
     try self.gc_values.append(value);
 
@@ -286,12 +299,6 @@ fn gc(self: *Self) !void {
         }
     }
 
-    var iterator = self.string_literals.iterator();
-
-    while (iterator.next()) |entry| {
-        tag(.{ .string = entry.value_ptr.* });
-    }
-
     // TODO: use data structure with fast append
     // and fast element removal
 
@@ -309,15 +316,10 @@ fn gc(self: *Self) !void {
 }
 
 const GCValue = union(enum) {
-    string: *rt.StringObject,
-    string_content: *rt.StringContent,
     lambda: *rt.LambdaObject,
 
     fn from(value: Value) ?GCValue {
         switch (value) {
-            .string => |str| {
-                return .{ .string = str };
-            },
             .lambda => |lambda| {
                 return .{ .lambda = lambda };
             },
@@ -328,16 +330,6 @@ const GCValue = union(enum) {
     /// sets the tag to false
     fn fetchResetTag(self: GCValue) bool {
         switch (self) {
-            .string => |s| {
-                const it = s.tag;
-                s.tag = false;
-                return it;
-            },
-            .string_content => |s| {
-                const it = s.tag;
-                s.tag = false;
-                return it;
-            },
             .lambda => |l| {
                 const it = l.tag;
                 l.tag = false;
@@ -348,13 +340,6 @@ const GCValue = union(enum) {
 
     fn die(self: GCValue, allocator: std.mem.Allocator) void {
         switch (self) {
-            .string => |s| {
-                allocator.destroy(s);
-            },
-            .string_content => |s| {
-                allocator.free(s.items);
-                allocator.destroy(s);
-            },
             .lambda => |l| {
                 l.body.down(allocator);
                 l.context.deinit(allocator);
@@ -366,10 +351,6 @@ const GCValue = union(enum) {
 
 fn tag(value: Value) void {
     switch (value) {
-        .string => |str| {
-            str.tag = true;
-            str.content.tag = true;
-        },
         .lambda => |lambda| {
             lambda.tag = true;
             for (lambda.context.items) |item| {
@@ -387,32 +368,4 @@ fn destroyGCValues(self: *Self) void {
 
     self.gc_values_hack.deinit();
     self.gc_values.deinit();
-}
-
-pub fn registerString(self: *Self, source: []const u8) !*rt.StringObject {
-    const slice = try self.allocator.alloc(u8, source.len);
-    errdefer self.allocator.free(slice);
-
-    std.mem.copyForwards(u8, slice, source);
-
-    const content = try self.allocator.create(rt.StringContent);
-    errdefer self.allocator.destroy(content);
-    content.* = .{ .items = slice };
-
-    const str = rt.StringObject{ .content = content, .len = 4, .offset = 0 };
-
-    const result = try self.allocator.create(rt.StringObject);
-    result.* = str;
-    errdefer self.allocator.destroy(result);
-
-    // we do this to make sure the second gc doesn't destroy the string object.
-    // when we regiter it for the second time
-    try self.stack.append(.{ .string = result });
-
-    try self.registerGC(.{ .string = result });
-    try self.registerGC(.{ .string_content = content });
-
-    _ = self.stack.pop();
-
-    return result;
 }

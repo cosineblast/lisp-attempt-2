@@ -30,7 +30,7 @@ pub const LambdaBody = struct { //
     pub const Immediate = union(enum) { //
         integer: i64,
         boolean: bool,
-        string: std.ArrayListUnmanaged(u8),
+        symbol: std.ArrayListUnmanaged(u8),
         nil,
     };
 
@@ -74,21 +74,8 @@ pub const LambdaObject = struct { //
     tag: GCTag = GCTagDefault,
 };
 
-pub const StringContent = struct {
-    // TODO: allocate items in-place with struct, as a flexible array
-    items: []const u8,
-    tag: GCTag = GCTagDefault,
-};
-
-pub const StringObject = struct { //
-    content: *StringContent,
-    offset: usize,
-    len: usize,
-    tag: GCTag = GCTagDefault,
-
-    pub fn items(self: *StringObject) []const u8 {
-        return self.content.items[self.offset .. self.offset + self.len];
-    }
+pub const SymbolObject = struct { //
+    content: []const u8,
 };
 
 pub const Value = union(enum) {
@@ -97,7 +84,7 @@ pub const Value = union(enum) {
     integer: i64,
     boolean: bool,
     lambda: *LambdaObject,
-    string: *StringObject,
+    symbol: *SymbolObject,
 
     real_function: *const fn (state: *VM, count: u8) anyerror!void,
 
@@ -121,8 +108,8 @@ pub const Value = union(enum) {
             .list => {
                 try writer.print("(...)", .{});
             },
-            .string => |str| {
-                try writer.print("\"{s}\"", .{str.items()});
+            .symbol => |symbol| {
+                try writer.print("'{s}", .{symbol.content});
             },
             .nil => {
                 try writer.print("nil", .{});
