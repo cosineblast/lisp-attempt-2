@@ -297,8 +297,6 @@ pub const Compilation = struct { //
     }
 
     fn compileFunctionCall(self: *Self, call: Expression.Call) Error!void {
-        const earlier_frame_size = self.frame_size;
-
         const was_tail = self.is_tail;
         self.is_tail = false;
 
@@ -310,15 +308,20 @@ pub const Compilation = struct { //
 
         self.is_tail = was_tail;
 
-        try self.lambda_builder.addInstruction(.{ .call = .{ .arg_count = @intCast(call.arguments.len) } });
+        if (self.is_tail) {
+            // we only keep the arguments and the function to execute in the stack
+            const toKeep = call.arguments.len + 1;
+            try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(self.frame_size - toKeep), .keep = @intCast(toKeep) } });
 
-        // addRetIfIsTail assumes the frame size is the one before this expression was compiled
-        self.frame_size = earlier_frame_size;
-
-        try self.addRetIfIsTail();
+            try self.lambda_builder.addInstruction(.{ .tcall = .{ .arg_count = @intCast(call.arguments.len) } });
+        } else {
+            try self.lambda_builder.addInstruction(.{ .call = .{ .arg_count = @intCast(call.arguments.len) } });
+        }
     }
 
     fn compileIfExpression(self: *Self, value: Expression.If) Error!void {
+        // TODO: remove superfluous jmp instruction if in tail call mode
+
         const was_tail = self.is_tail;
         self.is_tail = false;
         try self.compileExpression(value.condition);

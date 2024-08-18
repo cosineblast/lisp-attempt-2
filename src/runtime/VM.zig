@@ -217,37 +217,10 @@ fn execute(self: *Self) !void {
                 self.stack.items.len -= drop;
             },
             .call => |info| {
-                const fn_value = self.stack.pop();
-
-                switch (fn_value) {
-                    .real_function => |function| {
-                        try function(self, info.arg_count);
-                    },
-
-                    .lambda => |lambda| {
-                        if (lambda.body.parameter_count != null and lambda.body.parameter_count != info.arg_count) {
-                            return error.MismatchedCall;
-                        }
-
-                        try self.call_stack.append(self.active_frame.?);
-
-                        self.active_frame = .{
-                            .body = lambda.body,
-                            .instruction_offset = 0,
-                            .current_lambda = lambda,
-                        };
-
-                        for (lambda.context.items) |value| {
-                            try self.stack.append(value);
-                        }
-                    },
-
-                    else => return error.IllegalCall,
-                }
+                try self.doCall(false, info.arg_count);
             },
-            .tcall => {
-                // TODO
-                unreachable;
+            .tcall => |info| {
+                try self.doCall(true, info.arg_count);
             },
             .ret => {
                 self.active_frame = self.call_stack.pop();
@@ -257,7 +230,45 @@ fn execute(self: *Self) !void {
     }
 }
 
+fn doCall(self: *Self, tail_call: bool, arg_count: u8) !void {
+    const fn_value = self.stack.pop();
+
+    switch (fn_value) {
+        .real_function => |function| {
+            try function(self, arg_count);
+
+            if (tail_call) {
+                self.active_frame = self.call_stack.pop();
+            }
+        },
+
+        .lambda => |lambda| {
+            if (lambda.body.parameter_count != null and lambda.body.parameter_count != arg_count) {
+                return error.MismatchedCall;
+            }
+
+            if (!tail_call) {
+                try self.call_stack.append(self.active_frame.?);
+            }
+
+            self.active_frame = .{
+                .body = lambda.body,
+                .instruction_offset = 0,
+                .current_lambda = lambda,
+            };
+
+            for (lambda.context.items) |value| {
+                try self.stack.append(value);
+            }
+        },
+
+        else => return error.IllegalCall,
+    }
+}
+
 fn printStack(self: *Self) !void {
+    std.debug.print("call stack len = {}\n", .{self.call_stack.items.len});
+
     std.debug.print("stack (len={}) : ", .{self.stack.items.len});
     var i = self.stack.items.len;
     var count: usize = 0;
