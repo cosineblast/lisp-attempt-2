@@ -121,38 +121,48 @@ pub const Value = union(enum) {
 
 pub const ValueType = std.meta.Tag(Value);
 
-pub fn dump(lambda: *const LambdaBody) void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+fn toJsonStream(lambda: *const LambdaBody, json_writer: anytype) anyerror!void {
+    try json_writer.beginObject();
 
-    var arr = std.ArrayList(u8).init(allocator);
-    defer arr.deinit();
+    try json_writer.objectField("body");
 
-    const writer = arr.writer();
+    try json_writer.beginArray();
 
     for (lambda.code.items) |item| {
-        std.json.stringify(item, .{}, writer) catch unreachable;
-        writer.print("\n", .{}) catch unreachable;
+        try json_writer.write(item);
     }
 
-    std.debug.print("{s}\n", .{arr.items});
+    try json_writer.endArray();
 
-    std.debug.print("immediate table:\n", .{});
+    try json_writer.objectField("immediate_table");
+
+    try json_writer.beginArray();
 
     for (0..lambda.immediate_count) |i| {
-        std.debug.print("{}: ", .{i});
-        std.debug.print("{}", .{lambda.immediate_table[i]});
-        std.debug.print("\n", .{});
+        try json_writer.write(lambda.immediate_table[i]);
     }
 
-    std.debug.print("\nother bodies {{\n", .{});
+    try json_writer.endArray();
 
+    try json_writer.objectField("other_bodies");
+
+    try json_writer.beginArray();
     for (0..lambda.other_body_count) |i| {
-        std.debug.print("[0] => \n", .{});
-        dump(lambda.other_bodies[i]);
+        try toJsonStream(lambda.other_bodies[i], json_writer);
     }
+    try json_writer.endArray();
 
-    std.debug.print("}}\n", .{});
+    try json_writer.endObject();
+}
+
+pub fn dump(lambda: *const LambdaBody) void {
+    const stderr = std.io.getStdErr();
+    const writer = stderr.writer();
+    var json_writer = std.json.writeStream(writer, .{ .whitespace = .indent_2 });
+
+    toJsonStream(lambda, &json_writer) catch unreachable;
+
+    writer.writeByte('\n') catch unreachable;
 }
 
 test "basic instruction test" {
