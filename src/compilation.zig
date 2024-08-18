@@ -148,6 +148,7 @@ pub const Compilation = struct { //
     nil_literal_id: ?u16,
     issue: ?OtherError,
     self_name: ?[]const u8,
+    is_tail: bool,
 
     pub fn init(allocator: Allocator) Compilation {
         return .{ //
@@ -162,6 +163,7 @@ pub const Compilation = struct { //
             .nil_literal_id = null,
             .issue = null,
             .self_name = null,
+            .is_tail = false,
         };
     }
 
@@ -197,15 +199,36 @@ pub const Compilation = struct { //
                 try self.compileLambdaExpression(lambda_expr);
             },
             .begin_expression => |expressions| {
+                // TODO: move to separate function
+                // TODO: make last expression of begin a tail call is_tail
+                // TODO: define semantics of empty begin
+
+                const was_tail = self.is_tail;
+                self.is_tail = false;
+
                 for (expressions) |item| {
                     try self.compileExpression(item);
                 }
+                self.is_tail = was_tail;
+
                 try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(expressions.len - 1), .keep = 1 } });
+
+                try self.addRetIfIsTail();
             },
             .def_expression => |it| {
+                // TODO: move to another function
+
+                const was_tail = self.is_tail;
+                self.is_tail = false;
+
                 try self.compileExpression(it.value);
+
                 const id = try self.getGlobal(it.name);
+
                 try self.lambda_builder.addInstruction(.{ .defg = .{ .id = @intCast(id) } });
+
+                self.is_tail = was_tail;
+                try self.addRetIfIsTail();
             },
             .true_expression => {
                 try self.compileSingleton(&self.true_literal_id, .{ .boolean = true });
@@ -221,10 +244,17 @@ pub const Compilation = struct { //
         self.frame_size = before + 1;
     }
 
-    fn compileIntegerLiteral(self: *Self, value: i64) Error!void {
-        const id_: ?u16 = self.integer_literals.get(value);
+    fn addRetIfIsTail(self: *Self) Error!void {
+        if (self.is_tail) {
+            // normally, we would drop frame_size -1, but we only increment this value after the expresison is done compiling,
+            // and this function is always used during the compilation of an expression.
+            try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(self.frame_size), .keep = 1 } });
+            try self.lambda_builder.addInstruction(.ret);
+        }
+    }
 
-        const id = id_ orelse blk: {
+    fn compileIntegerLiteral(self: *Self, value: i64) Error!void {
+        const id = self.integer_literals.get(value) orelse blk: {
             const next = self.lambda_builder.addImmediate(.{ .integer = value });
 
             try self.integer_literals.put(value, next);
@@ -235,6 +265,8 @@ pub const Compilation = struct { //
         try self.lambda_builder.addInstruction(.{ //
             .load = .{ .id = id },
         });
+
+        try self.addRetIfIsTail();
     }
 
     fn compileVariable(self: *Self, name: []const u8) Error!void {
@@ -242,6 +274,7 @@ pub const Compilation = struct { //
             if (std.mem.eql(u8, name, self_name)) {
                 try self.lambda_builder.addInstruction(.load_self);
 
+                try self.addRetIfIsTail();
                 return;
             }
         }
@@ -255,6 +288,8 @@ pub const Compilation = struct { //
 
             try self.lambda_builder.addInstruction(.{ .loadg = .{ .id = @intCast(id) } });
         }
+
+        try self.addRetIfIsTail();
     }
 
     fn getGlobal(self: *Self, name: []const u8) !u16 {
@@ -286,17 +321,33 @@ pub const Compilation = struct { //
     }
 
     fn compileFunctionCall(self: *Self, call: Expression.Call) Error!void {
+        const earlier_frame_size = self.frame_size;
+
+        const was_tail = self.is_tail;
+        self.is_tail = false;
+
         for (call.arguments) |arg| {
             try self.compileExpression(arg);
         }
 
         try self.compileExpression(call.name);
 
+        self.is_tail = was_tail;
+
         try self.lambda_builder.addInstruction(.{ .call = .{ .arg_count = @intCast(call.arguments.len) } });
+
+        // addRetIfIsTail assumes the frame size is the one before this expression was compiled
+        self.frame_size = earlier_frame_size;
+
+        try self.addRetIfIsTail();
     }
 
     fn compileIfExpression(self: *Self, value: Expression.If) Error!void {
+        const was_tail = self.is_tail;
+        self.is_tail = false;
         try self.compileExpression(value.condition);
+
+        self.is_tail = was_tail;
 
         const jf_index = self.lambda_builder.nextOffset();
         try self.lambda_builder.addInstruction(.{ .jf = .{ .offset = 0 } });
@@ -304,6 +355,7 @@ pub const Compilation = struct { //
         self.frame_size -= 1; // jf pops one value
 
         const before_then = self.lambda_builder.insertedSoFar();
+
         try self.compileExpression(value.then_branch);
         const after_then = self.lambda_builder.insertedSoFar();
 
@@ -321,11 +373,18 @@ pub const Compilation = struct { //
         const after_else = self.lambda_builder.insertedSoFar();
 
         self.lambda_builder.setInstruction(jmp_index, .{ .jmp = .{ .offset = @intCast(1 + after_else - before_else) } });
+
+        // note: we don't add ret if it tail in this case, because either branch
+        // knows that it is tail, so it has already added a ret instruction
     }
 
     fn compileLetExpression(self: *Self, value: Expression.Let) Error!void {
         const size = self.frame_size;
+
+        const was_tail = self.is_tail;
+        self.is_tail = false;
         try self.compileExpression(value.value);
+        self.is_tail = was_tail;
 
         try self.local_bindings.append(.{ .name = value.name, .frame_offset = size });
 
@@ -334,6 +393,8 @@ pub const Compilation = struct { //
         try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = 1, .keep = 1 } });
 
         _ = self.local_bindings.pop();
+
+        // no ret if it tail here
     }
 
     fn compileSingleton(self: *Self, id_ptr: *?u16, value: Immediate) Error!void {
@@ -348,6 +409,8 @@ pub const Compilation = struct { //
         };
 
         try self.lambda_builder.addInstruction(.{ .load = .{ .id = id } });
+
+        try self.addRetIfIsTail();
     }
 
     fn compileLambdaExpression(self: *Self, expr: Expression.Lambda) Error!void {
@@ -389,26 +452,22 @@ pub const Compilation = struct { //
             .issue = null,
             .global_ref_table = std.StringHashMap(u16).init(self.allocator),
             .self_name = expr.self_name,
+            .is_tail = true,
         };
 
         next.lambda_builder.setParameterCount(@intCast(expr.parameters.len));
 
         defer next.deinit();
 
-        try next.compileLambdaBody(expr.body);
+        try next.compileExpression(expr.body);
 
         const body = try next.lambda_builder.buildOnHeap();
 
         const id = self.lambda_builder.addBodyReference(body);
 
         try self.lambda_builder.addInstruction(.{ .loadf = .{ .in_context = @intCast(context_length), .id = id } });
-    }
 
-    fn compileLambdaBody(self: *Self, expression: *Expression) Error!void {
-        try self.compileExpression(expression);
-
-        try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(self.frame_size - 1), .keep = 1 } });
-        try self.lambda_builder.addInstruction(.ret);
+        try self.addRetIfIsTail();
     }
 };
 

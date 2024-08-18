@@ -12,10 +12,12 @@ const Expression = compilation.Expression;
 
 const ArrayList = std.ArrayList;
 
+const nth = parsing.ListNode.nth;
+
 pub fn translate(node: *ParseNode, allocator: Allocator) Error!*Expression {
     switch (node.*) {
         .list => |list| {
-            const call = parsing.ListNode.nth(list, 0) orelse return error.InvalidSyntax;
+            const call = nth(list, 0) orelse return error.InvalidSyntax;
 
             switch (call.item.*) {
                 .symbol => {
@@ -68,16 +70,14 @@ pub fn translate(node: *ParseNode, allocator: Allocator) Error!*Expression {
     }
 }
 
-const nth = parsing.ListNode.nth;
-
 fn translateIf(node: *ParseNode, allocator: Allocator) Error!*Expression {
     const list = node.list;
 
-    const condition = parsing.ListNode.nth(list, 1) orelse return error.InvalidSyntax;
-    const then_branch = parsing.ListNode.nth(list, 2) orelse return error.InvalidSyntax;
-    const else_branch = parsing.ListNode.nth(list, 3) orelse return error.InvalidSyntax;
+    const condition = nth(list, 1) orelse return error.InvalidSyntax;
+    const then_branch = nth(list, 2) orelse return error.InvalidSyntax;
+    const else_branch = nth(list, 3) orelse return error.InvalidSyntax;
 
-    if (parsing.ListNode.nth(list, 4) != null) {
+    if (nth(list, 4) != null) {
         return error.InvalidSyntax;
     }
 
@@ -93,7 +93,7 @@ fn translateIf(node: *ParseNode, allocator: Allocator) Error!*Expression {
 fn translateBegin(node: *ParseNode, allocator: Allocator) Error!*Expression {
     const list = node.list;
 
-    var current = parsing.ListNode.nth(list, 1);
+    var current = nth(list, 1);
 
     var expressions = std.ArrayList(*Expression).init(allocator);
 
@@ -110,15 +110,15 @@ fn translateBegin(node: *ParseNode, allocator: Allocator) Error!*Expression {
 fn translateLet(node: *ParseNode, allocator: Allocator) Error!*Expression {
     const list = node.list;
 
-    const name = parsing.ListNode.nth(list, 1) orelse return error.InvalidSyntax;
-    const value = parsing.ListNode.nth(list, 2) orelse return error.InvalidSyntax;
-    const body = parsing.ListNode.nth(list, 3) orelse return error.InvalidSyntax;
+    const name = nth(list, 1) orelse return error.InvalidSyntax;
+    const value = nth(list, 2) orelse return error.InvalidSyntax;
+    const body = nth(list, 3) orelse return error.InvalidSyntax;
 
     if (name.item.* != ParseNodeType.symbol) {
         return error.InvalidSyntax;
     }
 
-    if (parsing.ListNode.nth(list, 4) != null) {
+    if (nth(list, 4) != null) {
         return error.InvalidSyntax;
     }
 
@@ -153,7 +153,7 @@ fn translateLambda(node: *ParseNode, allocator: Allocator) Error!*Expression {
         args = first;
         body = second;
 
-        if (parsing.ListNode.nth(list, 3) != null) {
+        if (nth(list, 3) != null) {
             return error.InvalidSyntax;
         }
     }
@@ -185,7 +185,7 @@ fn translateLambda(node: *ParseNode, allocator: Allocator) Error!*Expression {
 fn translateCall(node: *ParseNode, allocator: Allocator) Error!*Expression {
     const list = node.list;
 
-    const function_node = parsing.ListNode.nth(list, 0) orelse return error.InvalidSyntax;
+    const function_node = nth(list, 0) orelse return error.InvalidSyntax;
     const function_expr = try translate(function_node.item, allocator);
 
     var arguments = ArrayList(*Expression).init(allocator);
@@ -204,14 +204,14 @@ fn translateCall(node: *ParseNode, allocator: Allocator) Error!*Expression {
 fn translateDef(node: *ParseNode, allocator: Allocator) Error!*Expression {
     const list = node.list;
 
-    const name = parsing.ListNode.nth(list, 1) orelse return error.InvalidSyntax;
-    const value = parsing.ListNode.nth(list, 2) orelse return error.InvalidSyntax;
+    const name = nth(list, 1) orelse return error.InvalidSyntax;
+    const value = nth(list, 2) orelse return error.InvalidSyntax;
 
     if (name.item.* != ParseNodeType.symbol) {
         return error.InvalidSyntax;
     }
 
-    if (parsing.ListNode.nth(list, 3) != null) {
+    if (nth(list, 3) != null) {
         return error.InvalidSyntax;
     }
 
