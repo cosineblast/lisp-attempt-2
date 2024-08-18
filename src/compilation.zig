@@ -30,6 +30,8 @@ pub const Expression = union(enum) {
     const Lambda =
         struct { self_name: ?[]const u8, parameters: [][]const u8, body: *Expression };
 
+    const Def = struct { name: []const u8, value: *Expression };
+
     integer: i64, //
     variable: []const u8,
     function_call: Call,
@@ -41,7 +43,7 @@ pub const Expression = union(enum) {
 
     begin_expression: []*Expression,
     nil,
-    def_expression: struct { name: []const u8, value: *Expression },
+    def_expression: Def,
 
     fn onHeap(value: Expression, allocator: Allocator) !*Expression {
         const result = try allocator.create(Expression);
@@ -199,36 +201,10 @@ pub const Compilation = struct { //
                 try self.compileLambdaExpression(lambda_expr);
             },
             .begin_expression => |expressions| {
-                // TODO: move to separate function
-                // TODO: make last expression of begin a tail call is_tail
-                // TODO: define semantics of empty begin
-
-                const was_tail = self.is_tail;
-                self.is_tail = false;
-
-                for (expressions) |item| {
-                    try self.compileExpression(item);
-                }
-                self.is_tail = was_tail;
-
-                try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(expressions.len - 1), .keep = 1 } });
-
-                try self.addRetIfIsTail();
+                try self.compileBeginExpression(expressions);
             },
-            .def_expression => |it| {
-                // TODO: move to another function
-
-                const was_tail = self.is_tail;
-                self.is_tail = false;
-
-                try self.compileExpression(it.value);
-
-                const id = try self.getGlobal(it.name);
-
-                try self.lambda_builder.addInstruction(.{ .defg = .{ .id = @intCast(id) } });
-
-                self.is_tail = was_tail;
-                try self.addRetIfIsTail();
+            .def_expression => |expr| {
+                try self.compileDefExpression(expr);
             },
             .true_expression => {
                 try self.compileSingleton(&self.true_literal_id, .{ .boolean = true });
@@ -410,6 +386,37 @@ pub const Compilation = struct { //
 
         try self.lambda_builder.addInstruction(.{ .load = .{ .id = id } });
 
+        try self.addRetIfIsTail();
+    }
+
+    fn compileBeginExpression(self: *Self, expressions: []*Expression) Error!void {
+        // TODO: make last expression of begin a tail call is_tail
+        // TODO: define semantics of empty begin
+
+        const was_tail = self.is_tail;
+        self.is_tail = false;
+
+        for (expressions) |item| {
+            try self.compileExpression(item);
+        }
+        self.is_tail = was_tail;
+
+        try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = @intCast(expressions.len - 1), .keep = 1 } });
+
+        try self.addRetIfIsTail();
+    }
+
+    fn compileDefExpression(self: *Self, expr: Expression.Def) Error!void {
+        const was_tail = self.is_tail;
+        self.is_tail = false;
+
+        try self.compileExpression(expr.value);
+
+        const id = try self.getGlobal(expr.name);
+
+        try self.lambda_builder.addInstruction(.{ .defg = .{ .id = @intCast(id) } });
+
+        self.is_tail = was_tail;
         try self.addRetIfIsTail();
     }
 
