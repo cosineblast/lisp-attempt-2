@@ -1,3 +1,10 @@
 
-(let* and (lambda (x y) (if x y x))
-     (and false true))
+(let* two-pow-tc
+    (lambda myself (k acc)
+        (if (zero? k)
+            acc
+            (myself (- k 1) (* 2 acc))))
+
+    (let* two-pow (lambda (k) (two-pow-tc k 1))
+
+    (two-pow 3)))

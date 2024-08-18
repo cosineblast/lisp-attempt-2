@@ -12,7 +12,8 @@ const builtins = @import("builtins.zig");
 
 pub const Frame = struct { //
     body: *rt.LambdaBody,
-    instruction_offset: usize,
+    current_lambda: ?*rt.LambdaObject = null,
+    instruction_offset: usize = 0,
 };
 
 pub const Settings = struct {
@@ -179,6 +180,14 @@ fn execute(self: *Self) !void {
                     return error.UnknownVariable;
                 }
             },
+            .load_self => {
+                if (self.active_frame.?.current_lambda) |current| {
+                    const value: Value = .{ .lambda = current };
+                    try self.stack.append(value);
+                } else {
+                    return error.NoCurrentLambda;
+                }
+            },
             .defg => |it| {
                 const name = self.active_frame.?.body.global_table[it.id];
 
@@ -222,8 +231,11 @@ fn execute(self: *Self) !void {
 
                         try self.call_stack.append(self.active_frame.?);
 
-                        self.active_frame.?.body = lambda.body;
-                        self.active_frame.?.instruction_offset = 0;
+                        self.active_frame = .{
+                            .body = lambda.body,
+                            .instruction_offset = 0,
+                            .current_lambda = lambda,
+                        };
 
                         for (lambda.context.items) |value| {
                             try self.stack.append(value);

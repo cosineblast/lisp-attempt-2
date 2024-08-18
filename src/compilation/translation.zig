@@ -68,6 +68,8 @@ pub fn translate(node: *ParseNode, allocator: Allocator) Error!*Expression {
     }
 }
 
+const nth = parsing.ListNode.nth;
+
 fn translateIf(node: *ParseNode, allocator: Allocator) Error!*Expression {
     const list = node.list;
 
@@ -131,11 +133,29 @@ fn translateLet(node: *ParseNode, allocator: Allocator) Error!*Expression {
 fn translateLambda(node: *ParseNode, allocator: Allocator) Error!*Expression {
     const list = node.list;
 
-    const args = parsing.ListNode.nth(list, 1) orelse return error.InvalidSyntax;
-    const body = parsing.ListNode.nth(list, 2) orelse return error.InvalidSyntax;
+    var args: *parsing.ListNode = undefined;
+    var body: *parsing.ListNode = undefined;
 
-    if (parsing.ListNode.nth(list, 3) != null) {
-        return error.InvalidSyntax;
+    const first = nth(list, 1) orelse return error.InvalidSyntax;
+    const second = nth(list, 2) orelse return error.InvalidSyntax;
+
+    var self_name: ?[]const u8 = null;
+
+    if (first.item.* == .symbol) {
+        args = second;
+        body = nth(list, 3) orelse return error.InvalidSyntax;
+        self_name = first.item.symbol;
+
+        if (nth(list, 4) != null) {
+            return error.InvalidSyntax;
+        }
+    } else {
+        args = first;
+        body = second;
+
+        if (parsing.ListNode.nth(list, 3) != null) {
+            return error.InvalidSyntax;
+        }
     }
 
     if (args.item.* != ParseNodeType.list) {
@@ -158,7 +178,7 @@ fn translateLambda(node: *ParseNode, allocator: Allocator) Error!*Expression {
     const body_expr = try translate(body.item, allocator);
 
     const result = try allocator.create(Expression);
-    result.* = .{ .lambda = .{ .parameters = names.items, .body = body_expr } };
+    result.* = .{ .lambda = .{ .self_name = self_name, .parameters = names.items, .body = body_expr } };
     return result;
 }
 

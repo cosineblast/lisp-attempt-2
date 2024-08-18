@@ -9,6 +9,8 @@ const compilation = @import("compilation.zig");
 
 const translation = compilation.translation;
 
+const verbose = true;
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -24,7 +26,7 @@ pub fn main() !void {
 
     std.debug.print("lisp attempt 2\n", .{});
 
-    var vm = try VM.init(base_allocator);
+    var vm = try VM.initWithSettings(base_allocator, .{ .verbose = verbose });
     defer vm.deinit();
 
     while (true) {
@@ -37,29 +39,37 @@ pub fn main() !void {
             }
         };
 
-        std.debug.print("[REPL] read ok!\n", .{});
+        if (verbose) {
+            std.debug.print("[REPL] read ok!\n", .{});
+        }
 
         const expr = try compilation.translation.translate(tree, allocator);
 
-        std.debug.print("[REPL] translate ok!\n", .{});
+        if (verbose) {
+            std.debug.print("[REPL] translate ok!\n", .{});
+        }
 
         var arr = std.ArrayList(u8).init(base_allocator);
         defer arr.deinit();
 
         try compilation.showExpression(expr, &arr);
 
-        std.debug.print("[REPL] translation:\n{s}\n", .{arr.items});
+        if (verbose) {
+            std.debug.print("[REPL] translation:\n{s}\n", .{arr.items});
+        }
 
         var body = try compilation.compile(expr, base_allocator);
         defer body.down(base_allocator);
 
-        std.debug.print("[REPL] compile ok!\n", .{});
+        if (verbose) {
+            std.debug.print("[REPL] compile ok!\n", .{});
 
-        std.debug.print("[REPL] lambda Body:\n", .{});
+            std.debug.print("[REPL] lambda Body:\n", .{});
 
-        rt.dump(body);
+            rt.dump(body);
 
-        std.debug.print("[REPL] executing... \n", .{});
+            std.debug.print("[REPL] executing... \n", .{});
+        }
 
         const result = try vm.eval(body);
 

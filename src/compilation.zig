@@ -27,7 +27,8 @@ pub const Expression = union(enum) {
         body: *Expression,
     };
 
-    const Lambda = struct { parameters: [][]const u8, body: *Expression };
+    const Lambda =
+        struct { self_name: ?[]const u8, parameters: [][]const u8, body: *Expression };
 
     integer: i64, //
     variable: []const u8,
@@ -93,7 +94,16 @@ const analysis = struct {
                 for (lambda_expr.parameters) |parameter| {
                     try bound.append(parameter);
                 }
+
+                if (lambda_expr.self_name) |name| {
+                    try bound.append(name);
+                }
+
                 try findFreeVariables(lambda_expr.body, bound, free);
+
+                if (lambda_expr.self_name) |_| {
+                    _ = bound.pop();
+                }
 
                 for (0..lambda_expr.parameters.len) |_| {
                     _ = bound.pop();
@@ -137,6 +147,7 @@ pub const Compilation = struct { //
     false_literal_id: ?u16,
     nil_literal_id: ?u16,
     issue: ?OtherError,
+    self_name: ?[]const u8,
 
     pub fn init(allocator: Allocator) Compilation {
         return .{ //
@@ -150,6 +161,7 @@ pub const Compilation = struct { //
             .false_literal_id = null,
             .nil_literal_id = null,
             .issue = null,
+            .self_name = null,
         };
     }
 
@@ -226,9 +238,15 @@ pub const Compilation = struct { //
     }
 
     fn compileVariable(self: *Self, name: []const u8) Error!void {
-        const frame_offset_ = self.lookupLocal(name);
+        if (self.self_name) |self_name| {
+            if (std.mem.eql(u8, name, self_name)) {
+                try self.lambda_builder.addInstruction(.load_self);
 
-        if (frame_offset_) |frame_offset| {
+                return;
+            }
+        }
+
+        if (self.lookupLocal(name)) |frame_offset| {
             const stack_offset = self.computeStackOffset(frame_offset);
 
             try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(stack_offset) } });
@@ -370,6 +388,7 @@ pub const Compilation = struct { //
             .nil_literal_id = null,
             .issue = null,
             .global_ref_table = std.StringHashMap(u16).init(self.allocator),
+            .self_name = expr.self_name,
         };
 
         next.lambda_builder.setParameterCount(@intCast(expr.parameters.len));
