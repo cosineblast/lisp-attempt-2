@@ -11,6 +11,35 @@ const translation = compilation.translation;
 
 const verbose = true;
 
+fn parse(reader: std.io.AnyReader, allocator: std.mem.Allocator) !?*parsing.ParseNode {
+    var diagnostic: parsing.Diagnostic = undefined;
+
+    return parsing.parseFromReader(reader, allocator, .{ .diagnostic = &diagnostic }) catch |err| {
+        if (err == error.ParseError) {
+            if (diagnostic == .eof) {
+                return error.EOF;
+            }
+
+            std.debug.print("parser error: {}", .{diagnostic});
+
+            return null;
+        }
+        return err;
+    };
+}
+
+fn translate(tree: *parsing.ParseNode, allocator: std.mem.Allocator) !?*compilation.Expression {
+    var diagnostic: translation.Diagnostic = undefined;
+
+    return compilation.translation.translate(tree, allocator, &diagnostic) catch |err| {
+        if (err == error.TranslationError) {
+            std.debug.print("translation error: {}", .{diagnostic});
+            return null;
+        }
+        return err;
+    };
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -33,33 +62,13 @@ pub fn main() !void {
     while (true) {
         std.debug.print("\n> ", .{});
 
-        var parse_issue: parsing.Diagnostic = undefined;
-
-        const tree = parsing.parseFromReader(reader.any(), allocator, .{ .diagnostic = &parse_issue }) catch |err| {
-            if (err == error.ParseError) {
-                if (parse_issue == .eof) {
-                    break;
-                }
-
-                std.debug.print("parser error: {}", .{parse_issue});
-                continue;
-            }
-            return err;
-        };
+        const tree = try parse(reader.any(), allocator) orelse continue;
 
         if (verbose) {
             std.debug.print("[REPL] read ok!\n", .{});
         }
 
-        var diagnostic: translation.Diagnostic = undefined;
-
-        const expr = compilation.translation.translate(tree, allocator, &diagnostic) catch |err| {
-            if (err == error.TranslationError) {
-                std.debug.print("translation error: {}", .{diagnostic});
-                continue;
-            }
-            return err;
-        };
+        const expr = try translate(tree, allocator) orelse continue;
 
         if (verbose) {
             std.debug.print("[REPL] translate ok!\n", .{});
