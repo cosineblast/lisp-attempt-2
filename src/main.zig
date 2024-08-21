@@ -31,12 +31,19 @@ pub fn main() !void {
 
     while (true) {
         std.debug.print("\n> ", .{});
-        const tree = parsing.parseFromReader(reader.any(), allocator) catch |e| {
-            if (e == error.EOF) {
-                break;
-            } else {
-                return e;
+
+        var parse_issue: parsing.Diagnostic = undefined;
+
+        const tree = parsing.parseFromReader(reader.any(), allocator, .{ .diagnostic = &parse_issue }) catch |err| {
+            if (err == error.ParseError) {
+                if (parse_issue == .eof) {
+                    break;
+                }
+
+                std.debug.print("parser error: {}", .{parse_issue});
+                continue;
             }
+            return err;
         };
 
         if (verbose) {

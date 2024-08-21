@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 const TokenType = enum { openPar, closePar, integerLiteral, symbol };
 
@@ -17,6 +18,12 @@ const Tokenizer = struct {
     next_char: union(enum) { uninitialized, eof, next: u8 },
     next_token: union(enum) { uninitialized, eof, next: Token },
     allocator: Allocator,
+    config: ParseConfig,
+
+    fn fail(state: *Tokenizer, diagnostic: Diagnostic) error{ParseError} {
+        state.config.diagnose(diagnostic);
+        return error.ParseError;
+    }
 
     fn shiftChar(state: *Tokenizer) void {
         if (state.reader.readByte()) |byte| {
@@ -62,7 +69,7 @@ const Tokenizer = struct {
         } else if (isSymbolCharacter(next)) {
             try state.shiftSymbol();
         } else {
-            return error.UnknownChar;
+            return state.fail(.{ .unknown_char = next });
         }
     }
 
@@ -127,7 +134,7 @@ const Tokenizer = struct {
     }
 
     fn peekOrFail(state: *Tokenizer) !Token {
-        return (try state.peek()) orelse return error.EOF;
+        return (try state.peek()) orelse return state.fail(.eof);
     }
 
     fn skipWhitespace(state: *Tokenizer) void {
@@ -174,11 +181,96 @@ pub const ListNode = struct {
     }
 };
 
-pub const ParseNode = union(ParseNodeType) { list: ?*ListNode, integerLiteral: i64, symbol: []const u8 };
+pub const ParseNode = union(ParseNodeType) {
+    list: ?*ListNode,
+    integerLiteral: i64,
+    symbol: []const u8,
+};
 
-const ParseState = struct { allocator: Allocator, tokenizer: Tokenizer };
+pub const Error = error{
+    OutOfMemory,
+    Overflow,
+    ParseError,
+};
 
-const ArrayList = std.ArrayList;
+pub const Diagnostic = union(enum) {
+    unknown_char: u8,
+    eof,
+    unmatched_close_par,
+};
+
+const ParseConfig = struct {
+    diagnostic: ?*Diagnostic = null,
+
+    fn diagnose(self: *ParseConfig, diagnostic: Diagnostic) void {
+        if (self.diagnostic) |ptr| {
+            ptr.* = diagnostic;
+        }
+    }
+};
+
+const ParseState = struct {
+    allocator: Allocator,
+    tokenizer: Tokenizer,
+    config: ParseConfig,
+
+    fn fail(state: *ParseState, diagnostic: Diagnostic) error{ParseError} {
+        state.config.diagnose(diagnostic);
+        return error.ParseError;
+    }
+
+    fn parseNode(state: *ParseState) Error!*ParseNode {
+        const current = try state.tokenizer.peekOrFail();
+
+        // This is a hack to shift to the next token in a lazy manner.
+        // This is useful when reeading from stdin.
+        state.tokenizer.next_token = .uninitialized;
+
+        switch (current) {
+            .symbol => |value| {
+                const node = try state.allocator.create(ParseNode);
+                node.* = .{ .symbol = value };
+                return node;
+            },
+
+            .integerLiteral => |value| {
+                const node = try state.allocator.create(ParseNode);
+                node.* = .{ .integerLiteral = value };
+                return node;
+            },
+
+            .openPar => {
+                const list = try parseRestOfList(state);
+
+                const node = try state.allocator.create(ParseNode);
+                node.* = .{ .list = list };
+                return node;
+            },
+
+            .closePar => {
+                return state.fail(.unmatched_close_par);
+            },
+        }
+    }
+
+    fn parseRestOfList(state: *ParseState) Error!?*ListNode {
+        switch (try state.tokenizer.peekOrFail()) {
+            .closePar => {
+                state.tokenizer.next_token = .uninitialized;
+                // try state.tokenizer.shift();
+                return null;
+            },
+
+            else => {
+                const node = try state.allocator.create(ListNode);
+                const item = try parseNode(state);
+                const rest = try parseRestOfList(state);
+                node.* = ListNode{ .item = item, .rest = rest };
+                return node;
+            },
+        }
+    }
+};
 
 fn isSymbolCharacter(char: u8) bool {
     if (std.ascii.isAlphanumeric(char)) {
@@ -200,71 +292,17 @@ fn isWhitespace(x: u8) bool {
     return x == ' ' or x == '\t' or x == '\n';
 }
 
-const ParseError = error{ OutOfMemory, UnknownChar, EOF, UnmatchedClosePar, Overflow };
-
-fn parseNode(state: *ParseState) ParseError!*ParseNode {
-    const current = try state.tokenizer.peekOrFail();
-
-    // This is a hack to shift to the next token in a lazy manner.
-    // This is useful when reeading from stdin.
-    state.tokenizer.next_token = .uninitialized;
-
-    switch (current) {
-        .symbol => |value| {
-            const node = try state.allocator.create(ParseNode);
-            node.* = .{ .symbol = value };
-            return node;
-        },
-
-        .integerLiteral => |value| {
-            const node = try state.allocator.create(ParseNode);
-            node.* = .{ .integerLiteral = value };
-            return node;
-        },
-
-        .openPar => {
-            const list = try parseRestOfList(state);
-
-            const node = try state.allocator.create(ParseNode);
-            node.* = .{ .list = list };
-            return node;
-        },
-
-        .closePar => {
-            return error.UnmatchedClosePar;
-        },
-    }
-}
-
-fn parseRestOfList(state: *ParseState) ParseError!?*ListNode {
-    switch (try state.tokenizer.peekOrFail()) {
-        .closePar => {
-            state.tokenizer.next_token = .uninitialized;
-            // try state.tokenizer.shift();
-            return null;
-        },
-
-        else => {
-            const node = try state.allocator.create(ListNode);
-            const item = try parseNode(state);
-            const rest = try parseRestOfList(state);
-            node.* = ListNode{ .item = item, .rest = rest };
-            return node;
-        },
-    }
-}
-
-pub fn parse(str: []const u8, allocator: Allocator) ParseError!*ParseNode {
+pub fn parse(str: []const u8, allocator: Allocator, config: ParseConfig) Error!*ParseNode {
     var stream = std.io.FixedBufferStream([]const u8){ .buffer = str, .pos = 0 };
 
     const reader = stream.reader();
 
     const any = reader.any();
 
-    return parseFromReader(any, allocator);
+    return parseFromReader(any, allocator, config);
 }
 
-pub fn parseFromReader(reader: std.io.AnyReader, allocator: Allocator) ParseError!*ParseNode {
+pub fn parseFromReader(reader: std.io.AnyReader, allocator: Allocator, config: ParseConfig) Error!*ParseNode {
     var state = ParseState{ //
         .allocator = allocator,
         .tokenizer = .{ //
@@ -272,10 +310,12 @@ pub fn parseFromReader(reader: std.io.AnyReader, allocator: Allocator) ParseErro
             .allocator = allocator,
             .next_token = .uninitialized,
             .next_char = .uninitialized,
+            .config = config,
         },
+        .config = config,
     };
 
-    return parseNode(&state);
+    return state.parseNode();
 }
 
 pub fn show(node: *ParseNode, string: *ArrayList(u8)) error{OutOfMemory}!void {
