@@ -43,7 +43,15 @@ pub fn main() !void {
             std.debug.print("[REPL] read ok!\n", .{});
         }
 
-        const expr = try compilation.translation.translate(tree, allocator);
+        var diagnostic: translation.Diagnostic = undefined;
+
+        const expr = compilation.translation.translate(tree, allocator, &diagnostic) catch |err| {
+            if (err == error.TranslationError) {
+                std.debug.print("translation error: {}", .{diagnostic});
+                continue;
+            }
+            return err;
+        };
 
         if (verbose) {
             std.debug.print("[REPL] translate ok!\n", .{});
