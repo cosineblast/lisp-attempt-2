@@ -18,9 +18,25 @@ pub const Frame = struct { //
 
 pub const Settings = struct {
     verbose: bool = false,
+    diagnostic: ?*Diagnostic = null,
 };
 
 const GC_LIMIT = 100;
+
+pub const Error = error{
+    OutOfMemory,
+    VMError,
+};
+
+pub const Diagnostic = union(enum) {
+    unknown_global_value: []const u8,
+    no_current_lambda,
+    illegal_call,
+    arity_error: u8,
+
+    // TODO: review diagnostics and VMError for real functions
+    other: anyerror,
+};
 
 settings: Settings,
 stack: std.ArrayList(Value),
@@ -83,7 +99,7 @@ pub fn deinit(self: *Self) void {
     self.globals.deinit();
 }
 
-pub fn eval(self: *Self, body: *rt.LambdaBody) !Value {
+pub fn eval(self: *Self, body: *rt.LambdaBody) Error!Value {
     std.debug.assert(self.active_frame == null);
 
     self.active_frame = .{ .body = body, .instruction_offset = 0 };
@@ -99,7 +115,17 @@ pub fn eval(self: *Self, body: *rt.LambdaBody) !Value {
     return self.stack.pop();
 }
 
-fn execute(self: *Self) !void {
+fn fail(self: *Self, diagnostic: Diagnostic) error{VMError} {
+    if (self.settings.diagnostic) |ptr| {
+        ptr.* = diagnostic;
+    }
+
+    self.active_frame = null;
+
+    return error.VMError;
+}
+
+fn execute(self: *Self) Error!void {
     while (self.active_frame.?.instruction_offset < self.active_frame.?.body.code.items.len) {
         const instruction = self.active_frame.?.body.code.items[self.active_frame.?.instruction_offset];
 
@@ -177,7 +203,7 @@ fn execute(self: *Self) !void {
                 if (value_) |value| {
                     try self.stack.append(value);
                 } else {
-                    return error.UnknownVariable;
+                    return self.fail(.{ .unknown_global_value = name });
                 }
             },
             .load_self => {
@@ -185,7 +211,7 @@ fn execute(self: *Self) !void {
                     const value: Value = .{ .lambda = current };
                     try self.stack.append(value);
                 } else {
-                    return error.NoCurrentLambda;
+                    return self.fail(.no_current_lambda);
                 }
             },
             .defg => |it| {
@@ -230,12 +256,14 @@ fn execute(self: *Self) !void {
     }
 }
 
-fn doCall(self: *Self, tail_call: bool, arg_count: u8) !void {
+fn doCall(self: *Self, tail_call: bool, arg_count: u8) Error!void {
     const fn_value = self.stack.pop();
 
     switch (fn_value) {
         .real_function => |function| {
-            try function(self, arg_count);
+            function(self, arg_count) catch |err| {
+                return self.fail(.{ .other = err });
+            };
 
             if (tail_call) {
                 self.active_frame = self.call_stack.pop();
@@ -244,7 +272,7 @@ fn doCall(self: *Self, tail_call: bool, arg_count: u8) !void {
 
         .lambda => |lambda| {
             if (lambda.body.parameter_count != null and lambda.body.parameter_count != arg_count) {
-                return error.MismatchedCall;
+                return self.fail(.{ .arity_error = lambda.body.parameter_count.? });
             }
 
             if (!tail_call) {
@@ -262,7 +290,7 @@ fn doCall(self: *Self, tail_call: bool, arg_count: u8) !void {
             }
         },
 
-        else => return error.IllegalCall,
+        else => return self.fail(.illegal_call),
     }
 }
 

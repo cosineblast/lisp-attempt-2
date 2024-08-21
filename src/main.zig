@@ -26,7 +26,8 @@ pub fn main() !void {
 
     std.debug.print("lisp attempt 2\n", .{});
 
-    var vm = try VM.initWithSettings(base_allocator, .{ .verbose = verbose });
+    var vm_diagnostic: VM.Diagnostic = undefined;
+    var vm = try VM.initWithSettings(base_allocator, .{ .verbose = verbose, .diagnostic = &vm_diagnostic });
     defer vm.deinit();
 
     while (true) {
@@ -86,7 +87,14 @@ pub fn main() !void {
             std.debug.print("[REPL] executing... \n", .{});
         }
 
-        const result = try vm.eval(body);
+        const result = vm.eval(body) catch |err| {
+            if (err == error.VMError) {
+                std.debug.print("vmerror: {}", .{vm_diagnostic});
+                continue;
+            }
+
+            return err;
+        };
 
         std.debug.print("{}", .{result});
     }
