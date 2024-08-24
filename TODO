@@ -1,0 +1,24 @@
+
+- add symbols and quote
+
+- add lists
+
+- add macros
+
+- add documentation on instructions
+
+
+- review diagnostics and VMError for real functions
+- remove fixed 256 arrays in lambda body and replace with dynamic array (maybe inplace)
+- move u8 instruction values to u16
+
+- add error message when a value cannot be put in an instruction (too many immediates)
+  instead of just crashing
+
+- make subtraction routine return inverse of value when given one argument
+
+
+- add string literals
+- add more string builtins
+
+
