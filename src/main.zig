@@ -9,8 +9,6 @@ const compilation = @import("compilation.zig");
 
 const translation = compilation.translation;
 
-const verbose = true;
-
 fn parse(reader: std.io.AnyReader, allocator: std.mem.Allocator) !?*parsing.ParseNode {
     var diagnostic: parsing.Diagnostic = undefined;
 
@@ -40,8 +38,25 @@ fn translate(tree: *parsing.ParseNode, allocator: std.mem.Allocator) !?*compilat
     };
 }
 
+fn isVerbose() bool {
+    var args = std.process.args();
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "-v") or
+            std.mem.eql(u8, arg, "--verbose"))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub fn main() !void {
+    const verbose = isVerbose();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
     defer _ = gpa.deinit();
 
     const base_allocator = gpa.allocator();
