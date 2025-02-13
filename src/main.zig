@@ -17,7 +17,7 @@ fn parse(reader: std.io.AnyReader, allocator: std.mem.Allocator) !?*parsing.Pars
     return parsing.parseFromReader(reader, allocator, .{ .diagnostic = &diagnostic }) catch |err| {
         if (err == error.ParseError) {
             if (diagnostic == .eof) {
-                return error.EOF;
+                std.process.exit(0);
             }
 
             std.debug.print("parser error: {}", .{diagnostic});
