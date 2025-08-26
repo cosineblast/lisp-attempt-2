@@ -3,7 +3,7 @@
 // see `compile`.
 const std = @import("std");
 
-const ArrayList = std.ArrayList;
+const ArrayListU = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
 
 const parsing = @import("parsing.zig");
@@ -57,14 +57,16 @@ pub const Expression = union(enum) {
 
 const ExpressionType = std.meta.Tag(Expression);
 
-pub fn showExpression(expression: *Expression, out: *ArrayList(u8)) !void {
+pub fn showExpression(expression: *Expression, out: *std.ArrayList(u8)) !void {
     try std.json.stringify(expression.*, .{ .whitespace = .indent_2 }, out.writer());
 }
 
 const analysis = struct {
     const Error = error{OutOfMemory};
 
-    fn findFreeVariables(expr: *Expression, bound: *ArrayList([]const u8), free: *ArrayList([]const u8)) Error!void {
+    // TODO: make this a proper struct and pass stuff as pointer to struct
+
+    fn findFreeVariables(expr: *Expression, bound: *ArrayListU([]const u8), free: *ArrayListU([]const u8), allocator: Allocator) Error!void {
         switch (expr.*) {
             .variable => |name| {
                 var found: bool = false;
@@ -74,37 +76,37 @@ const analysis = struct {
                     }
                 }
                 if (!found) {
-                    try free.append(name);
+                    try free.append(allocator, name);
                 }
             },
             .function_call => |call| {
-                try findFreeVariables(call.name, bound, free);
+                try findFreeVariables(call.name, bound, free, allocator);
 
                 for (call.arguments) |item| {
-                    try findFreeVariables(item, bound, free);
+                    try findFreeVariables(item, bound, free, allocator);
                 }
             },
             .if_expresssion => |if_expr| {
-                try findFreeVariables(if_expr.condition, bound, free);
-                try findFreeVariables(if_expr.then_branch, bound, free);
-                try findFreeVariables(if_expr.else_branch, bound, free);
+                try findFreeVariables(if_expr.condition, bound, free, allocator);
+                try findFreeVariables(if_expr.then_branch, bound, free, allocator);
+                try findFreeVariables(if_expr.else_branch, bound, free, allocator);
             },
             .let_expression => |let_expr| {
-                try findFreeVariables(let_expr.value, bound, free);
-                try bound.append(let_expr.name);
-                try findFreeVariables(let_expr.body, bound, free);
+                try findFreeVariables(let_expr.value, bound, free, allocator);
+                try bound.append(allocator, let_expr.name);
+                try findFreeVariables(let_expr.body, bound, free, allocator);
                 _ = bound.pop().?;
             },
             .lambda => |lambda_expr| {
                 for (lambda_expr.parameters) |parameter| {
-                    try bound.append(parameter);
+                    try bound.append(allocator, parameter);
                 }
 
                 if (lambda_expr.self_name) |name| {
-                    try bound.append(name);
+                    try bound.append(allocator, name);
                 }
 
-                try findFreeVariables(lambda_expr.body, bound, free);
+                try findFreeVariables(lambda_expr.body, bound, free, allocator);
 
                 if (lambda_expr.self_name) |_| {
                     _ = bound.pop().?;
@@ -116,11 +118,11 @@ const analysis = struct {
             },
             .begin_expression => |expressions| {
                 for (expressions) |item| {
-                    try findFreeVariables(item, bound, free);
+                    try findFreeVariables(item, bound, free, allocator);
                 }
             },
             .def_expression => |it| {
-                try findFreeVariables(it.value, bound, free);
+                try findFreeVariables(it.value, bound, free, allocator);
             },
             .integer => {},
             .true_expression => {},
@@ -144,9 +146,9 @@ pub const Compilation = struct { //
     lambda_builder: LambdaBuilder,
     frame_size: usize,
 
-    local_bindings: ArrayList(Binding),
-    integer_literals: std.AutoHashMap(i64, u16),
-    global_ref_table: std.StringHashMap(u16),
+    local_bindings: ArrayListU(Binding),
+    integer_literals: std.AutoHashMapUnmanaged(i64, u16),
+    global_ref_table: std.StringHashMapUnmanaged(u16),
 
     true_literal_id: ?u16,
     false_literal_id: ?u16,
@@ -160,9 +162,9 @@ pub const Compilation = struct { //
             .allocator = allocator,
             .lambda_builder = .init(allocator),
             .frame_size = 0,
-            .local_bindings = .init(allocator),
-            .integer_literals = .init(allocator),
-            .global_ref_table = .init(allocator),
+            .local_bindings = .empty,
+            .integer_literals = .empty,
+            .global_ref_table = .empty,
             .true_literal_id = null,
             .false_literal_id = null,
             .nil_literal_id = null,
@@ -173,9 +175,9 @@ pub const Compilation = struct { //
     }
 
     pub fn deinit(self: *Self) void {
-        self.local_bindings.deinit();
-        self.integer_literals.deinit();
-        self.global_ref_table.deinit();
+        self.local_bindings.deinit(self.allocator);
+        self.integer_literals.deinit(self.allocator);
+        self.global_ref_table.deinit(self.allocator);
     }
 
     // The expected behavior of all compile functions, is that
@@ -236,7 +238,7 @@ pub const Compilation = struct { //
         const id = self.integer_literals.get(value) orelse blk: {
             const next = self.lambda_builder.addImmediate(.{ .integer = value });
 
-            try self.integer_literals.put(value, next);
+            try self.integer_literals.put(self.allocator, value, next);
 
             break :blk next;
         };
@@ -274,7 +276,7 @@ pub const Compilation = struct { //
     fn getGlobal(self: *Self, name: []const u8) !u16 {
         return self.global_ref_table.get(name) orelse blk: {
             const id = self.lambda_builder.addGlobalReference(name);
-            try self.global_ref_table.put(name, id);
+            try self.global_ref_table.put(self.allocator, name, id);
             break :blk id;
         };
     }
@@ -368,7 +370,7 @@ pub const Compilation = struct { //
         try self.compileExpression(value.value);
         self.is_tail = was_tail;
 
-        try self.local_bindings.append(.{ .name = value.name, .frame_offset = size });
+        try self.local_bindings.append(self.allocator, .{ .name = value.name, .frame_offset = size });
 
         try self.compileExpression(value.body);
 
@@ -427,25 +429,25 @@ pub const Compilation = struct { //
     }
 
     fn compileLambdaExpression(self: *Self, expr: Expression.Lambda) Error!void {
-        var bindings = ArrayList(Binding).init(self.allocator);
+        var bindings: ArrayListU(Binding) = .empty;
 
         for (expr.parameters) |parameter| {
-            try bindings.append(.{ .name = parameter, .frame_offset = bindings.items.len });
+            try bindings.append(self.allocator, .{ .name = parameter, .frame_offset = bindings.items.len });
         }
 
-        var bound = ArrayList([]const u8).init(self.allocator);
-        defer bound.deinit();
+        var bound: ArrayListU([]const u8) = .empty;
+        defer bound.deinit(self.allocator);
 
-        var free = ArrayList([]const u8).init(self.allocator);
-        defer free.deinit();
+        var free: ArrayListU([]const u8) = .empty;
+        defer free.deinit(self.allocator);
 
-        try analysis.findFreeVariables(expr.body, &bound, &free);
+        try analysis.findFreeVariables(expr.body, &bound, &free, self.allocator);
 
         var context_length: usize = 0;
 
         for (free.items) |item| {
             if (self.lookupLocal(item)) |offset| {
-                try bindings.append(.{ .name = item, .frame_offset = bindings.items.len });
+                try bindings.append(self.allocator, .{ .name = item, .frame_offset = bindings.items.len });
 
                 try self.lambda_builder.addInstruction(.{ .pick = .{ .offset = @intCast(self.computeStackOffset(offset)) } });
 
@@ -458,12 +460,12 @@ pub const Compilation = struct { //
             .lambda_builder = LambdaBuilder.init(self.allocator),
             .frame_size = bindings.items.len,
             .local_bindings = bindings,
-            .integer_literals = std.AutoHashMap(i64, u16).init(self.allocator),
+            .integer_literals = .empty,
             .true_literal_id = null,
             .false_literal_id = null,
             .nil_literal_id = null,
             .issue = null,
-            .global_ref_table = std.StringHashMap(u16).init(self.allocator),
+            .global_ref_table = .empty,
             .self_name = expr.self_name,
             .is_tail = true,
         };
@@ -527,7 +529,7 @@ test "translation does not fail" {
 
         try std.testing.expectEqual(example.@"1", result_type);
 
-        var arr = std.ArrayList(u8).init(std.testing.allocator);
+        var arr: ArrayListU(u8) = .empty;
         defer arr.deinit();
 
         try showExpression(result, &arr);
