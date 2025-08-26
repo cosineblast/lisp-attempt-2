@@ -42,20 +42,20 @@ pub const Diagnostic = union(enum) {
 };
 
 settings: Settings,
-stack: std.ArrayList(Value),
-call_stack: std.ArrayList(Frame),
+stack: std.ArrayListUnmanaged(Value),
+call_stack: std.ArrayListUnmanaged(Frame),
 allocator: std.mem.Allocator,
 active_frame: ?Frame,
-globals: std.StringHashMap(Value),
+globals: std.StringHashMapUnmanaged(Value),
 
-symbols: std.StringHashMap(*rt.SymbolObject),
+symbols: std.StringHashMapUnmanaged(*rt.SymbolObject),
 
-gc_values: std.ArrayList(GCValue),
+gc_values: std.ArrayListUnmanaged(GCValue),
 
 // it's hard to remove values from gc_values, so we move
 // everything to gc_values_hack, of similar capacity,
 // clear gc_values
-gc_values_hack: std.ArrayList(GCValue),
+gc_values_hack: std.ArrayListUnmanaged(GCValue),
 
 gc_counter: u32 = GC_LIMIT,
 
@@ -66,13 +66,13 @@ pub fn init(allocator: std.mem.Allocator) !Self {
 pub fn initWithSettings(allocator: std.mem.Allocator, settings: Settings) !Self {
     var self = Self{ //
         .allocator = allocator,
-        .stack = .init(allocator),
-        .call_stack = .init(allocator),
+        .stack = .empty,
+        .call_stack = .empty,
         .active_frame = null,
-        .globals = .init(allocator),
-        .gc_values = .init(allocator),
-        .gc_values_hack = .init(allocator),
-        .symbols = .init(allocator),
+        .globals = .empty,
+        .gc_values = .empty,
+        .gc_values_hack = .empty,
+        .symbols = .empty,
         .settings = settings,
     };
 
@@ -82,24 +82,24 @@ pub fn initWithSettings(allocator: std.mem.Allocator, settings: Settings) !Self 
 }
 
 fn addBuiltins(self: *Self) !void {
-    try self.globals.put("+", .{ .real_function = builtins.add });
-    try self.globals.put("-", .{ .real_function = builtins.subtract });
-    try self.globals.put("*", .{ .real_function = builtins.multiply });
-    try self.globals.put("/", .{ .real_function = builtins.divide });
-    try self.globals.put("zero?", .{ .real_function = builtins.isZero });
-    try self.globals.put("int?", .{ .real_function = builtins.isInt });
-    try self.globals.put("fn?", .{ .real_function = builtins.isFn });
-    try self.globals.put("bool?", .{ .real_function = builtins.isBool });
-    try self.globals.put("<", .{ .real_function = builtins.lt });
-    try self.globals.put(">", .{ .real_function = builtins.gt });
-    try self.globals.put("sample-symbol", .{ .real_function = builtins.sample_symbol });
+    try self.globals.put(self.allocator, "+", .{ .real_function = builtins.add });
+    try self.globals.put(self.allocator, "-", .{ .real_function = builtins.subtract });
+    try self.globals.put(self.allocator, "*", .{ .real_function = builtins.multiply });
+    try self.globals.put(self.allocator, "/", .{ .real_function = builtins.divide });
+    try self.globals.put(self.allocator, "zero?", .{ .real_function = builtins.isZero });
+    try self.globals.put(self.allocator, "int?", .{ .real_function = builtins.isInt });
+    try self.globals.put(self.allocator, "fn?", .{ .real_function = builtins.isFn });
+    try self.globals.put(self.allocator, "bool?", .{ .real_function = builtins.isBool });
+    try self.globals.put(self.allocator, "<", .{ .real_function = builtins.lt });
+    try self.globals.put(self.allocator, ">", .{ .real_function = builtins.gt });
+    try self.globals.put(self.allocator, "sample-symbol", .{ .real_function = builtins.sample_symbol });
 }
 
 pub fn deinit(self: *Self) void {
     self.destroyGCValues();
-    self.stack.deinit();
-    self.call_stack.deinit();
-    self.globals.deinit();
+    self.stack.deinit(self.allocator);
+    self.call_stack.deinit(self.allocator);
+    self.globals.deinit(self.allocator);
 }
 
 pub fn eval(self: *Self, body: *rt.LambdaBody) Error!Value {
@@ -143,7 +143,7 @@ fn execute(self: *Self) Error!void {
             .pick => |offset| {
                 std.debug.assert(offset.offset < self.stack.items.len);
 
-                try self.stack.append(self.stack.items[self.stack.items.len - 1 - offset.offset]);
+                try self.stack.append(self.allocator, self.stack.items[self.stack.items.len - 1 - offset.offset]);
             },
             .jf => |offset| {
                 const top = self.stack.pop().?;
@@ -173,7 +173,7 @@ fn execute(self: *Self) Error!void {
                     .nil => .nil,
                 };
 
-                try self.stack.append(value);
+                try self.stack.append(self.allocator, value);
             },
             .loadf => |info| {
                 const body = self.active_frame.?.body.other_bodies[info.id];
@@ -184,8 +184,8 @@ fn execute(self: *Self) Error!void {
                 body.up();
                 errdefer body.down(self.allocator);
 
-                var context = std.ArrayList(Value).init(self.allocator);
-                function.context = context.moveToUnmanaged();
+                // TODO: review this one
+                function.context = .empty;
 
                 for (0..info.in_context) |_| {
                     try function.context.append(self.allocator, self.stack.pop().?);
@@ -196,7 +196,7 @@ fn execute(self: *Self) Error!void {
                 const value: Value = .{ .lambda = function };
 
                 try self.registerGC(.{ .lambda = function });
-                try self.stack.append(value);
+                try self.stack.append(self.allocator, value);
             },
             .loadg => |id| {
                 const name = self.active_frame.?.body.global_table[id.id];
@@ -204,7 +204,7 @@ fn execute(self: *Self) Error!void {
                 const value_: ?Value = self.globals.get(name);
 
                 if (value_) |value| {
-                    try self.stack.append(value);
+                    try self.stack.append(self.allocator, value);
                 } else {
                     return self.fail(.{ .unknown_global_value = name });
                 }
@@ -212,7 +212,7 @@ fn execute(self: *Self) Error!void {
             .load_self => {
                 if (self.active_frame.?.current_lambda) |current| {
                     const value: Value = .{ .lambda = current };
-                    try self.stack.append(value);
+                    try self.stack.append(self.allocator, value);
                 } else {
                     return self.fail(.no_current_lambda);
                 }
@@ -222,9 +222,9 @@ fn execute(self: *Self) Error!void {
 
                 const value = self.stack.pop().?;
 
-                try self.globals.put(name, value);
+                try self.globals.put(self.allocator, name, value);
 
-                try self.stack.append(.nil);
+                try self.stack.append(self.allocator, .nil);
             },
             .rip => |info| {
                 std.debug.assert(self.stack.items.len >= info.drop + info.keep);
@@ -279,7 +279,7 @@ fn doCall(self: *Self, tail_call: bool, arg_count: u8) Error!void {
             }
 
             if (!tail_call) {
-                try self.call_stack.append(self.active_frame.?);
+                try self.call_stack.append(self.allocator, self.active_frame.?);
             }
 
             self.active_frame = .{
@@ -289,7 +289,7 @@ fn doCall(self: *Self, tail_call: bool, arg_count: u8) Error!void {
             };
 
             for (lambda.context.items) |value| {
-                try self.stack.append(value);
+                try self.stack.append(self.allocator, value);
             }
         },
 
@@ -323,17 +323,17 @@ pub fn intern(self: *Self, symbol: []const u8) !Value {
     if (self.symbols.get(symbol)) |object| {
         return .{ .symbol = object };
     } else {
-        var content = try std.ArrayList(u8).initCapacity(self.allocator, symbol.len);
-        errdefer content.deinit();
+        var content = try std.ArrayListUnmanaged(u8).initCapacity(self.allocator, symbol.len);
+        errdefer content.deinit(self.allocator);
 
-        try content.appendSlice(symbol);
+        try content.appendSlice(self.allocator, symbol);
 
         const object = try self.allocator.create(rt.SymbolObject);
         errdefer self.allocator.destroy(object);
 
         object.* = .{ .content = content.items };
 
-        try self.symbols.put(object.content, object);
+        try self.symbols.put(self.allocator, object.content, object);
 
         const value: Value = .{ .symbol = object };
         return value;
@@ -341,7 +341,7 @@ pub fn intern(self: *Self, symbol: []const u8) !Value {
 }
 
 pub fn registerGC(self: *Self, value: GCValue) !void {
-    try self.gc_values.append(value);
+    try self.gc_values.append(self.allocator, value);
 
     self.gc_counter -= 1;
 
@@ -371,13 +371,13 @@ fn gc(self: *Self) !void {
         if (!item.fetchResetTag()) {
             item.die(self.allocator);
         } else {
-            try self.gc_values_hack.append(item);
+            try self.gc_values_hack.append(self.allocator, item);
         }
     }
 
     self.gc_values.items.len = 0;
 
-    std.mem.swap(std.ArrayList(GCValue), &self.gc_values, &self.gc_values_hack);
+    std.mem.swap(std.ArrayListUnmanaged(GCValue), &self.gc_values, &self.gc_values_hack);
 }
 
 const GCValue = union(enum) {
@@ -431,6 +431,6 @@ fn destroyGCValues(self: *Self) void {
         item.die(self.allocator);
     }
 
-    self.gc_values_hack.deinit();
-    self.gc_values.deinit();
+    self.gc_values_hack.deinit(self.allocator);
+    self.gc_values.deinit(self.allocator);
 }

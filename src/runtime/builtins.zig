@@ -20,7 +20,7 @@ pub fn isZero(vm: *VM, arg_count: u8) anyerror!void {
         else => false,
     };
 
-    try vm.stack.append(.{ .boolean = result });
+    try vm.stack.append(vm.allocator, .{ .boolean = result });
 }
 
 pub fn add(vm: *VM, arg_count: u8) anyerror!void {
@@ -40,7 +40,7 @@ pub fn add(vm: *VM, arg_count: u8) anyerror!void {
         }
     }
 
-    try vm.stack.append(.{ .integer = result });
+    try vm.stack.append(vm.allocator, .{ .integer = result });
 }
 
 pub fn multiply(vm: *VM, arg_count: u8) anyerror!void {
@@ -60,7 +60,7 @@ pub fn multiply(vm: *VM, arg_count: u8) anyerror!void {
         }
     }
 
-    try vm.stack.append(.{ .integer = result });
+    try vm.stack.append(vm.allocator, .{ .integer = result });
 }
 
 pub fn subtract(vm: *VM, arg_count: u8) anyerror!void {
@@ -90,7 +90,7 @@ pub fn subtract(vm: *VM, arg_count: u8) anyerror!void {
 
     _ = vm.stack.pop().?;
 
-    try vm.stack.append(.{ .integer = result });
+    try vm.stack.append(vm.allocator, .{ .integer = result });
 }
 
 pub fn divide(vm: *VM, arg_count: u8) anyerror!void {
@@ -123,7 +123,7 @@ pub fn divide(vm: *VM, arg_count: u8) anyerror!void {
 
     _ = vm.stack.pop().?;
 
-    try vm.stack.append(.{ .integer = result });
+    try vm.stack.append(vm.allocator, .{ .integer = result });
 }
 
 pub fn isInt(vm: *VM, arg_count: u8) anyerror!void {
@@ -138,7 +138,7 @@ pub fn isInt(vm: *VM, arg_count: u8) anyerror!void {
         else => false,
     };
 
-    try vm.stack.append(.{ .boolean = result });
+    try vm.stack.append(vm.allocator, .{ .boolean = result });
 }
 
 pub fn isFn(vm: *VM, arg_count: u8) anyerror!void {
@@ -154,7 +154,7 @@ pub fn isFn(vm: *VM, arg_count: u8) anyerror!void {
         else => false,
     };
 
-    try vm.stack.append(.{ .boolean = result });
+    try vm.stack.append(vm.allocator, .{ .boolean = result });
 }
 
 pub fn isBool(vm: *VM, arg_count: u8) anyerror!void {
@@ -169,7 +169,7 @@ pub fn isBool(vm: *VM, arg_count: u8) anyerror!void {
         else => false,
     };
 
-    try vm.stack.append(.{ .boolean = result });
+    try vm.stack.append(vm.allocator, .{ .boolean = result });
 }
 
 pub fn lt(vm: *VM, arg_count: u8) anyerror!void {
@@ -186,7 +186,7 @@ pub fn lt(vm: *VM, arg_count: u8) anyerror!void {
 
     const result = left.integer < right.integer;
 
-    try vm.stack.append(.{ .boolean = result });
+    try vm.stack.append(vm.allocator, .{ .boolean = result });
 }
 
 pub fn gt(vm: *VM, arg_count: u8) anyerror!void {
@@ -203,7 +203,7 @@ pub fn gt(vm: *VM, arg_count: u8) anyerror!void {
 
     const result = left.integer > right.integer;
 
-    try vm.stack.append(.{ .boolean = result });
+    try vm.stack.append(vm.allocator, .{ .boolean = result });
 }
 
 pub fn sample_symbol(vm: *VM, arg_count: u8) anyerror!void {
@@ -213,5 +213,5 @@ pub fn sample_symbol(vm: *VM, arg_count: u8) anyerror!void {
 
     const result = try vm.intern("leak");
 
-    try vm.stack.append(result);
+    try vm.stack.append(vm.allocator, result);
 }
