@@ -1,3 +1,6 @@
+// This module implements the runtime interpreter.
+// 
+
 const std = @import("std");
 
 const rt = @import("../runtime.zig");

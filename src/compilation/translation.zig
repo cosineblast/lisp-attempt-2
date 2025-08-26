@@ -1,3 +1,9 @@
+
+// This module is responsible for converting from the parsed
+// S-expression syntax tree into a more refined AST.
+//
+// See `translate`.
+ 
 const std = @import("std");
 
 const compilation = @import("../compilation.zig");

@@ -1,3 +1,7 @@
+// 
+// This module contains the zig code implementation for all
+// builtin functions.
+
 const std = @import("std");
 
 const VM = @import("VM.zig");

@@ -1,3 +1,6 @@
+
+// This module is responsible for compiling from the parsed AST into VM bytecode.
+// see `compile`.
 const std = @import("std");
 
 const ArrayList = std.ArrayList;

@@ -1,3 +1,6 @@
+
+// This module is responsible for parsing S-expressions from a byte stream.
+// see `parse` or `parseFromReader`.
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
