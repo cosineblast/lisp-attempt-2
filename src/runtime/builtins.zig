@@ -9,7 +9,7 @@ pub fn isZero(vm: *VM, arg_count: u8) anyerror!void {
         return error.ArityError;
     }
 
-    const value = vm.stack.pop();
+    const value = vm.stack.pop().?;
 
     const result = switch (value) {
         .integer => |i| i == 0,
@@ -24,7 +24,7 @@ pub fn add(vm: *VM, arg_count: u8) anyerror!void {
     var count: u8 = 0;
 
     while (count < arg_count) : (count += 1) {
-        const value = vm.stack.pop();
+        const value = vm.stack.pop().?;
 
         switch (value) {
             .integer => |integer| {
@@ -44,7 +44,7 @@ pub fn multiply(vm: *VM, arg_count: u8) anyerror!void {
     var count: u8 = 0;
 
     while (count < arg_count) : (count += 1) {
-        const value = vm.stack.pop();
+        const value = vm.stack.pop().?;
 
         switch (value) {
             .integer => |integer| {
@@ -72,7 +72,7 @@ pub fn subtract(vm: *VM, arg_count: u8) anyerror!void {
     var count: u8 = 1;
 
     while (count < arg_count) : (count += 1) {
-        const value = vm.stack.pop();
+        const value = vm.stack.pop().?;
 
         switch (value) {
             .integer => |integer| {
@@ -84,7 +84,7 @@ pub fn subtract(vm: *VM, arg_count: u8) anyerror!void {
         }
     }
 
-    _ = vm.stack.pop();
+    _ = vm.stack.pop().?;
 
     try vm.stack.append(.{ .integer = result });
 }
@@ -102,7 +102,7 @@ pub fn divide(vm: *VM, arg_count: u8) anyerror!void {
     var count: u8 = 1;
 
     while (count < arg_count) : (count += 1) {
-        const value = vm.stack.pop();
+        const value = vm.stack.pop().?;
 
         switch (value) {
             .integer => |integer| {
@@ -117,7 +117,7 @@ pub fn divide(vm: *VM, arg_count: u8) anyerror!void {
         }
     }
 
-    _ = vm.stack.pop();
+    _ = vm.stack.pop().?;
 
     try vm.stack.append(.{ .integer = result });
 }
@@ -127,7 +127,7 @@ pub fn isInt(vm: *VM, arg_count: u8) anyerror!void {
         return error.ArityError;
     }
 
-    const value = vm.stack.pop();
+    const value = vm.stack.pop().?;
 
     const result = switch (value) {
         .integer => true,
@@ -142,7 +142,7 @@ pub fn isFn(vm: *VM, arg_count: u8) anyerror!void {
         return error.ArityError;
     }
 
-    const value = vm.stack.pop();
+    const value = vm.stack.pop().?;
 
     const result = switch (value) {
         .lambda => true,
@@ -158,7 +158,7 @@ pub fn isBool(vm: *VM, arg_count: u8) anyerror!void {
         return error.ArityError;
     }
 
-    const value = vm.stack.pop();
+    const value = vm.stack.pop().?;
 
     const result = switch (value) {
         .boolean => true,
@@ -173,8 +173,8 @@ pub fn lt(vm: *VM, arg_count: u8) anyerror!void {
         return error.ArityError;
     }
 
-    const right = vm.stack.pop();
-    const left = vm.stack.pop();
+    const right = vm.stack.pop().?;
+    const left = vm.stack.pop().?;
 
     if (left != .integer or right != .integer) {
         return error.ValueError;
@@ -190,8 +190,8 @@ pub fn gt(vm: *VM, arg_count: u8) anyerror!void {
         return error.ArityError;
     }
 
-    const right = vm.stack.pop();
-    const left = vm.stack.pop();
+    const right = vm.stack.pop().?;
+    const left = vm.stack.pop().?;
 
     if (left != .integer or right != .integer) {
         return error.ValueError;

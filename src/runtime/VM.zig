@@ -112,7 +112,7 @@ pub fn eval(self: *Self, body: *rt.LambdaBody) Error!Value {
 
     self.active_frame = null;
 
-    return self.stack.pop();
+    return self.stack.pop().?;
 }
 
 fn fail(self: *Self, diagnostic: Diagnostic) error{VMError} {
@@ -143,7 +143,7 @@ fn execute(self: *Self) Error!void {
                 try self.stack.append(self.stack.items[self.stack.items.len - 1 - offset.offset]);
             },
             .jf => |offset| {
-                const top = self.stack.pop();
+                const top = self.stack.pop().?;
 
                 if (top == rt.ValueType.boolean and top.boolean == false) {
                     self.active_frame.?.instruction_offset -= 1;
@@ -185,7 +185,7 @@ fn execute(self: *Self) Error!void {
                 function.context = context.moveToUnmanaged();
 
                 for (0..info.in_context) |_| {
-                    try function.context.append(self.allocator, self.stack.pop());
+                    try function.context.append(self.allocator, self.stack.pop().?);
                 }
 
                 std.mem.reverse(Value, function.context.items);
@@ -217,7 +217,7 @@ fn execute(self: *Self) Error!void {
             .defg => |it| {
                 const name = self.active_frame.?.body.global_table[it.id];
 
-                const value = self.stack.pop();
+                const value = self.stack.pop().?;
 
                 try self.globals.put(name, value);
 
@@ -249,7 +249,7 @@ fn execute(self: *Self) Error!void {
                 try self.doCall(true, info.arg_count);
             },
             .ret => {
-                self.active_frame = self.call_stack.pop();
+                self.active_frame = self.call_stack.pop().?;
             },
             .nop => {},
         }
@@ -257,7 +257,7 @@ fn execute(self: *Self) Error!void {
 }
 
 fn doCall(self: *Self, tail_call: bool, arg_count: u8) Error!void {
-    const fn_value = self.stack.pop();
+    const fn_value = self.stack.pop().?;
 
     switch (fn_value) {
         .real_function => |function| {
@@ -266,7 +266,7 @@ fn doCall(self: *Self, tail_call: bool, arg_count: u8) Error!void {
             };
 
             if (tail_call) {
-                self.active_frame = self.call_stack.pop();
+                self.active_frame = self.call_stack.pop().?;
             }
         },
 

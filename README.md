@@ -23,7 +23,7 @@ Documentation to be done.
 
 ## Running the project
 
-The interpreter is implemented in zig 0.12, and the easiest way to build it is by using [nix](https://nixos.org/), by
+The interpreter is implemented in zig 0.14, and the easiest way to build it is by using [nix](https://nixos.org/), by
 running `nix develop` and then `zig build run`, to run the project, or `zig build install` to generate a binary at `zig-out/bin/la2`.
 
 Running the program will start the repl.

@@ -90,7 +90,7 @@ const analysis = struct {
                 try findFreeVariables(let_expr.value, bound, free);
                 try bound.append(let_expr.name);
                 try findFreeVariables(let_expr.body, bound, free);
-                _ = bound.pop();
+                _ = bound.pop().?;
             },
             .lambda => |lambda_expr| {
                 for (lambda_expr.parameters) |parameter| {
@@ -104,11 +104,11 @@ const analysis = struct {
                 try findFreeVariables(lambda_expr.body, bound, free);
 
                 if (lambda_expr.self_name) |_| {
-                    _ = bound.pop();
+                    _ = bound.pop().?;
                 }
 
                 for (0..lambda_expr.parameters.len) |_| {
-                    _ = bound.pop();
+                    _ = bound.pop().?;
                 }
             },
             .begin_expression => |expressions| {
@@ -371,7 +371,7 @@ pub const Compilation = struct { //
 
         try self.lambda_builder.addInstruction(.{ .rip = .{ .drop = 1, .keep = 1 } });
 
-        _ = self.local_bindings.pop();
+        _ = self.local_bindings.pop().?;
 
         // no ret if it tail here
     }
