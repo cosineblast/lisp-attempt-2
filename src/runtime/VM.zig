@@ -66,13 +66,13 @@ pub fn init(allocator: std.mem.Allocator) !Self {
 pub fn initWithSettings(allocator: std.mem.Allocator, settings: Settings) !Self {
     var self = Self{ //
         .allocator = allocator,
-        .stack = std.ArrayList(Value).init(allocator),
-        .call_stack = std.ArrayList(Frame).init(allocator),
+        .stack = .init(allocator),
+        .call_stack = .init(allocator),
         .active_frame = null,
-        .globals = std.StringHashMap(Value).init(allocator),
-        .gc_values = std.ArrayList(GCValue).init(allocator),
-        .gc_values_hack = std.ArrayList(GCValue).init(allocator),
-        .symbols = std.StringHashMap(*rt.SymbolObject).init(allocator),
+        .globals = .init(allocator),
+        .gc_values = .init(allocator),
+        .gc_values_hack = .init(allocator),
+        .symbols = .init(allocator),
         .settings = settings,
     };
 

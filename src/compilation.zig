@@ -158,11 +158,11 @@ pub const Compilation = struct { //
     pub fn init(allocator: Allocator) Compilation {
         return .{ //
             .allocator = allocator,
-            .lambda_builder = LambdaBuilder.init(allocator),
+            .lambda_builder = .init(allocator),
             .frame_size = 0,
-            .local_bindings = ArrayList(Binding).init(allocator),
-            .integer_literals = std.AutoHashMap(i64, u16).init(allocator),
-            .global_ref_table = std.StringHashMap(u16).init(allocator),
+            .local_bindings = .init(allocator),
+            .integer_literals = .init(allocator),
+            .global_ref_table = .init(allocator),
             .true_literal_id = null,
             .false_literal_id = null,
             .nil_literal_id = null,
