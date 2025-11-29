@@ -1,4 +1,6 @@
 const std = @import("std");
+const ArrayList = std.ArrayListUnmanaged;
+
 const rt = @import("runtime.zig");
 
 const Instruction = rt.Instruction;
@@ -10,7 +12,7 @@ const LambdaBody = rt.LambdaBody;
 // The API of this module tries to be agnostic to which of these is utilized.
 const Self = @This();
 
-code: std.ArrayListUnmanaged(Instruction),
+code: ArrayList(Instruction),
 allocator: std.mem.Allocator,
 immediate_table: [256]LambdaBody.Immediate,
 other_bodies: [256]*LambdaBody,

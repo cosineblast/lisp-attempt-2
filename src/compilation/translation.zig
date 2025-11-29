@@ -16,7 +16,7 @@ const Allocator = std.mem.Allocator;
 
 const Expression = compilation.Expression;
 
-const ArrayListU = std.ArrayListUnmanaged;
+const ArrayList = std.ArrayListUnmanaged;
 
 const nth = parsing.ListNode.nth;
 
@@ -134,7 +134,7 @@ const State = struct {
 
         var current = nth(list, 1);
 
-        var expressions = ArrayListU(*Expression).empty;
+        var expressions = ArrayList(*Expression).empty;
 
         while (current) |current_| {
             try expressions.append(self.allocator, try self.translate(current_.item));
@@ -203,7 +203,7 @@ const State = struct {
 
         var current = args.item.list;
 
-        var names = ArrayListU([]const u8).empty;
+        var names = ArrayList([]const u8).empty;
         errdefer names.deinit(self.allocator);
 
         while (current) |current_| {
@@ -228,7 +228,7 @@ const State = struct {
         const function_node = nth(list, 0) orelse return self.fail(.empty_form);
         const function_expr = try self.translate(function_node.item);
 
-        var arguments = ArrayListU(*Expression).empty;
+        var arguments = ArrayList(*Expression).empty;
         var current = list.?.rest;
 
         while (current) |arg| {

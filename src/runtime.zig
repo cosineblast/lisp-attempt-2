@@ -8,6 +8,8 @@ pub const VM = @import("./runtime/VM.zig");
 
 const LambdaBuilder = @import("./LambdaBuilder.zig");
 
+const ArrayList = std.ArrayListUnmanaged;
+
 pub const Instruction = union(enum) {
     call: struct { arg_count: u8 },
     tcall: struct { arg_count: u8 },
@@ -33,11 +35,11 @@ pub const LambdaBody = struct { //
     pub const Immediate = union(enum) { //
         integer: i64,
         boolean: bool,
-        symbol: std.ArrayListUnmanaged(u8),
+        symbol: ArrayList(u8),
         nil,
     };
 
-    code: std.ArrayListUnmanaged(Instruction),
+    code: ArrayList(Instruction),
     immediate_table: [256]Immediate,
     immediate_count: usize,
     parameter_count: ?u8,
@@ -73,7 +75,7 @@ const GCTagDefault = false;
 
 pub const LambdaObject = struct { //
     body: *LambdaBody,
-    context: std.ArrayListUnmanaged(Value),
+    context: ArrayList(Value),
     tag: GCTag = GCTagDefault,
 };
 

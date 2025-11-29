@@ -124,8 +124,3 @@ pub fn main() !void {
     }
 }
 
-usingnamespace @import("parsing.zig");
-
-usingnamespace @import("compilation.zig");
-
-usingnamespace @import("runtime.zig");

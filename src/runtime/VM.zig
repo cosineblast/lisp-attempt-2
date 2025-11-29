@@ -2,6 +2,7 @@
 // 
 
 const std = @import("std");
+const ArrayList = std.ArrayListUnmanaged;
 
 const rt = @import("../runtime.zig");
 
@@ -42,20 +43,20 @@ pub const Diagnostic = union(enum) {
 };
 
 settings: Settings,
-stack: std.ArrayListUnmanaged(Value),
-call_stack: std.ArrayListUnmanaged(Frame),
+stack: ArrayList(Value),
+call_stack: ArrayList(Frame),
 allocator: std.mem.Allocator,
 active_frame: ?Frame,
 globals: std.StringHashMapUnmanaged(Value),
 
 symbols: std.StringHashMapUnmanaged(*rt.SymbolObject),
 
-gc_values: std.ArrayListUnmanaged(GCValue),
+gc_values: ArrayList(GCValue),
 
 // it's hard to remove values from gc_values, so we move
 // everything to gc_values_hack, of similar capacity,
 // clear gc_values
-gc_values_hack: std.ArrayListUnmanaged(GCValue),
+gc_values_hack: ArrayList(GCValue),
 
 gc_counter: u32 = GC_LIMIT,
 
@@ -323,7 +324,7 @@ pub fn intern(self: *Self, symbol: []const u8) !Value {
     if (self.symbols.get(symbol)) |object| {
         return .{ .symbol = object };
     } else {
-        var content = try std.ArrayListUnmanaged(u8).initCapacity(self.allocator, symbol.len);
+        var content = try ArrayList(u8).initCapacity(self.allocator, symbol.len);
         errdefer content.deinit(self.allocator);
 
         try content.appendSlice(self.allocator, symbol);
@@ -377,7 +378,7 @@ fn gc(self: *Self) !void {
 
     self.gc_values.items.len = 0;
 
-    std.mem.swap(std.ArrayListUnmanaged(GCValue), &self.gc_values, &self.gc_values_hack);
+    std.mem.swap(ArrayList(GCValue), &self.gc_values, &self.gc_values_hack);
 }
 
 const GCValue = union(enum) {

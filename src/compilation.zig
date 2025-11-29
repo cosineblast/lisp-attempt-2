@@ -3,7 +3,7 @@
 // see `compile`.
 const std = @import("std");
 
-const ArrayListU = std.ArrayListUnmanaged;
+const ArrayList = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
 
 const parsing = @import("parsing.zig");
@@ -66,7 +66,7 @@ const analysis = struct {
 
     // TODO: make this a proper struct and pass stuff as pointer to struct
 
-    fn findFreeVariables(expr: *Expression, bound: *ArrayListU([]const u8), free: *ArrayListU([]const u8), allocator: Allocator) Error!void {
+    fn findFreeVariables(expr: *Expression, bound: *ArrayList([]const u8), free: *ArrayList([]const u8), allocator: Allocator) Error!void {
         switch (expr.*) {
             .variable => |name| {
                 var found: bool = false;
@@ -146,7 +146,7 @@ pub const Compilation = struct { //
     lambda_builder: LambdaBuilder,
     frame_size: usize,
 
-    local_bindings: ArrayListU(Binding),
+    local_bindings: ArrayList(Binding),
     integer_literals: std.AutoHashMapUnmanaged(i64, u16),
     global_ref_table: std.StringHashMapUnmanaged(u16),
 
@@ -429,16 +429,16 @@ pub const Compilation = struct { //
     }
 
     fn compileLambdaExpression(self: *Self, expr: Expression.Lambda) Error!void {
-        var bindings: ArrayListU(Binding) = .empty;
+        var bindings: ArrayList(Binding) = .empty;
 
         for (expr.parameters) |parameter| {
             try bindings.append(self.allocator, .{ .name = parameter, .frame_offset = bindings.items.len });
         }
 
-        var bound: ArrayListU([]const u8) = .empty;
+        var bound: ArrayList([]const u8) = .empty;
         defer bound.deinit(self.allocator);
 
-        var free: ArrayListU([]const u8) = .empty;
+        var free: ArrayList([]const u8) = .empty;
         defer free.deinit(self.allocator);
 
         try analysis.findFreeVariables(expr.body, &bound, &free, self.allocator);

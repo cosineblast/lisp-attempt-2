@@ -4,7 +4,7 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
-const ArrayListU = std.ArrayListUnmanaged;
+const ArrayList = std.ArrayListUnmanaged;
 
 const TokenType = enum { openPar, closePar, integerLiteral, symbol };
 
@@ -79,7 +79,7 @@ const Tokenizer = struct {
     fn shiftNumber(state: *Tokenizer) !void {
         std.debug.assert(std.ascii.isDigit(state.next_char.next));
 
-        var content: ArrayListU(u8) = .empty;
+        var content: ArrayList(u8) = .empty;
         defer content.deinit(state.allocator);
 
         while (true) {
@@ -107,7 +107,7 @@ const Tokenizer = struct {
     fn shiftSymbol(state: *Tokenizer) !void {
         std.debug.assert(isSymbolCharacter(state.next_char.next));
 
-        var symbol: ArrayListU(u8) = .empty;
+        var symbol: ArrayList(u8) = .empty;
         errdefer symbol.deinit(state.allocator);
 
         while (true) {
@@ -321,7 +321,7 @@ pub fn parseFromReader(reader: std.io.AnyReader, allocator: Allocator, config: P
     return state.parseNode();
 }
 
-pub fn show(node: *ParseNode, string: *ArrayListU(u8), allocator: Allocator) error{OutOfMemory}!void {
+pub fn show(node: *ParseNode, string: *ArrayList(u8), allocator: Allocator) error{OutOfMemory}!void {
     const w = string.writer(allocator);
 
     switch (node.*) {
@@ -337,7 +337,7 @@ pub fn show(node: *ParseNode, string: *ArrayListU(u8), allocator: Allocator) err
     }
 }
 
-pub fn showList(list: ?*ListNode, string: *ArrayListU(u8), allocator: Allocator) error{OutOfMemory}!void {
+pub fn showList(list: ?*ListNode, string: *ArrayList(u8), allocator: Allocator) error{OutOfMemory}!void {
     const w = string.writer(allocator);
     try w.print("(", .{});
 
