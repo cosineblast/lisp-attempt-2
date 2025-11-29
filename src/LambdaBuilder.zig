@@ -10,7 +10,8 @@ const LambdaBody = rt.LambdaBody;
 // The API of this module tries to be agnostic to which of these is utilized.
 const Self = @This();
 
-code: std.ArrayList(Instruction),
+code: std.ArrayListUnmanaged(Instruction),
+allocator: std.mem.Allocator,
 immediate_table: [256]LambdaBody.Immediate,
 other_bodies: [256]*LambdaBody,
 global_table: [256][]const u8,
@@ -21,7 +22,8 @@ parameter_count: ?u8,
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return Self{ //
-        .code = std.ArrayList(Instruction).init(allocator),
+        .code = .empty,
+        .allocator = allocator,
         .immediate_table = undefined,
         .other_bodies = undefined,
         .global_table = undefined,
@@ -33,7 +35,7 @@ pub fn init(allocator: std.mem.Allocator) Self {
 }
 
 pub fn addInstruction(self: *Self, instruction: Instruction) !void {
-    try self.code.append(instruction);
+    try self.code.append(self.allocator, instruction);
 }
 
 // The number of instructions inserted so far in this function
@@ -90,10 +92,13 @@ pub fn setParameterCount(self: *Self, count: u8) void {
 }
 
 pub fn build(self: *Self) LambdaBody {
+    const other = self.code;
+    self.code = .empty;
+
     return LambdaBody{ //
         .parameter_count = self.parameter_count,
         .immediate_table = self.immediate_table,
-        .code = self.code.moveToUnmanaged(),
+        .code = other,
         .immediate_count = self.next_value_index,
         .other_bodies = self.other_bodies,
         .other_body_count = self.next_body_index,
@@ -103,7 +108,7 @@ pub fn build(self: *Self) LambdaBody {
 }
 
 pub fn buildOnHeap(self: *Self) !*LambdaBody {
-    const result = try self.code.allocator.create(LambdaBody);
+    const result = try self.allocator.create(LambdaBody);
     result.* = self.build();
     return result;
 }
