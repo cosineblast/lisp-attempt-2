@@ -89,10 +89,10 @@ pub fn main() !void {
             std.debug.print("[REPL] translate ok!\n", .{});
         }
 
-        var arr = std.ArrayList(u8).init(base_allocator);
-        defer arr.deinit();
+        var arr = std.ArrayListUnmanaged(u8).empty;
+        defer arr.deinit(base_allocator);
 
-        try compilation.showExpression(expr, &arr);
+        try compilation.showExpression(expr, &arr, base_allocator);
 
         if (verbose) {
             std.debug.print("[REPL] translation:\n{s}\n", .{arr.items});
