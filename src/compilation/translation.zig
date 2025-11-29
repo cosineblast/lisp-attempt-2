@@ -16,7 +16,7 @@ const Allocator = std.mem.Allocator;
 
 const Expression = compilation.Expression;
 
-const ArrayList = std.ArrayList;
+const ArrayListU = std.ArrayListUnmanaged;
 
 const nth = parsing.ListNode.nth;
 
@@ -134,10 +134,10 @@ const State = struct {
 
         var current = nth(list, 1);
 
-        var expressions = std.ArrayList(*Expression).init(self.allocator);
+        var expressions = ArrayListU(*Expression).empty;
 
         while (current) |current_| {
-            try expressions.append(try self.translate(current_.item));
+            try expressions.append(self.allocator, try self.translate(current_.item));
             current = current_.rest;
         }
 
@@ -203,15 +203,15 @@ const State = struct {
 
         var current = args.item.list;
 
-        var names = std.ArrayList([]const u8).init(self.allocator);
-        errdefer names.deinit();
+        var names = ArrayListU([]const u8).empty;
+        errdefer names.deinit(self.allocator);
 
         while (current) |current_| {
             const name = current_.item;
             if (name.* != ParseNodeType.symbol) {
                 return self.fail(.{ .invalid_lambda_binding = name });
             }
-            try names.append(name.symbol);
+            try names.append(self.allocator, name.symbol);
             current = current_.rest;
         }
 
@@ -228,11 +228,11 @@ const State = struct {
         const function_node = nth(list, 0) orelse return self.fail(.empty_form);
         const function_expr = try self.translate(function_node.item);
 
-        var arguments = ArrayList(*Expression).init(self.allocator);
+        var arguments = ArrayListU(*Expression).empty;
         var current = list.?.rest;
 
         while (current) |arg| {
-            try arguments.append(try self.translate(arg.item));
+            try arguments.append(self.allocator, try self.translate(arg.item));
             current = arg.rest;
         }
 
