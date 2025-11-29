@@ -9,7 +9,7 @@ const compilation = @import("compilation.zig");
 
 const translation = compilation.translation;
 
-fn parse(reader: std.io.AnyReader, allocator: std.mem.Allocator) !?*parsing.ParseNode {
+fn parse(reader: *std.Io.Reader, allocator: std.mem.Allocator) !?*parsing.ParseNode {
     var diagnostic: parsing.Diagnostic = undefined;
 
     return parsing.parseFromReader(reader, allocator, .{ .diagnostic = &diagnostic }) catch |err| {
@@ -65,8 +65,11 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
+    var stdin_buffer: [4096]u8 = undefined;
+    
     const stdin = std.fs.File.stdin();
-    var reader = stdin.deprecatedReader();
+    var stdin_reader = stdin.reader(&stdin_buffer);
+    const reader = &stdin_reader.interface;
 
     std.debug.print("lisp attempt 2\n", .{});
 
@@ -77,7 +80,7 @@ pub fn main() !void {
     while (true) {
         std.debug.print("\n> ", .{});
 
-        const tree = try parse(reader.any(), allocator) orelse continue;
+        const tree = try parse(reader, allocator) orelse continue;
 
         if (verbose) {
             std.debug.print("[REPL] read ok!\n", .{});

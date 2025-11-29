@@ -16,7 +16,7 @@ const Token = union(TokenType) {
 };
 
 const Tokenizer = struct {
-    reader: std.io.AnyReader,
+    reader: *std.Io.Reader,
 
     next_char: union(enum) { uninitialized, eof, next: u8 },
     next_token: union(enum) { uninitialized, eof, next: Token },
@@ -29,7 +29,7 @@ const Tokenizer = struct {
     }
 
     fn shiftChar(state: *Tokenizer) void {
-        if (state.reader.readByte()) |byte| {
+        if (state.reader.takeByte()) |byte| {
             state.next_char = .{ .next = byte };
         } else |issue| {
             // TODO: return error if not EndOfStream
@@ -295,17 +295,7 @@ fn isWhitespace(x: u8) bool {
     return x == ' ' or x == '\t' or x == '\n';
 }
 
-pub fn parse(str: []const u8, allocator: Allocator, config: ParseConfig) Error!*ParseNode {
-    var stream = std.io.FixedBufferStream([]const u8){ .buffer = str, .pos = 0 };
-
-    const reader = stream.reader();
-
-    const any = reader.any();
-
-    return parseFromReader(any, allocator, config);
-}
-
-pub fn parseFromReader(reader: std.io.AnyReader, allocator: Allocator, config: ParseConfig) Error!*ParseNode {
+pub fn parseFromReader(reader: *std.Io.Reader, allocator: Allocator, config: ParseConfig) Error!*ParseNode {
     var state = ParseState{ //
         .allocator = allocator,
         .tokenizer = .{ //
