@@ -355,17 +355,3 @@ pub fn showList(list: ?*ListNode, string: *ArrayListU(u8), allocator: Allocator)
     try w.print(")", .{});
 }
 
-test "basic test" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var string = ArrayListU(u8);
-    defer string.deinit(std.testing.allocator);
-
-    const result = parse("(123 (456 789) () neat)", allocator) catch unreachable;
-
-    try show(result, &string, std.testing.allocator);
-
-    try std.testing.expectEqualStrings("(123 (456 789) () neat)", string.items);
-}

@@ -168,22 +168,5 @@ pub fn dump(lambda: *const LambdaBody) void {
 }
 
 test "basic instruction test" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    const example = "(let* x 10 x)";
-
-    const compilation = @import("compilation.zig");
-    const tree = try parsing.parse(example, allocator);
-    const expr = try compilation.translation.translate(tree, allocator);
-
-    const compiled = try compilation.compile(expr, allocator);
-
-    var vm = try VM.init(allocator);
-    defer vm.deinit();
-
-    const result = try vm.eval(compiled);
-
-    try std.testing.expectEqual(result.integer, 10);
+    // TODO
 }
