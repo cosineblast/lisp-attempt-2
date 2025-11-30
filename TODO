@@ -1,4 +1,10 @@
 
+0.15
+[X] Make program compile
+[X] Get JSON to work
+[ ] Use new reader instead of deprecated reader
+[ ] Use reader peek feature in parsing
+
 - add symbols and quote
 
 - add lists

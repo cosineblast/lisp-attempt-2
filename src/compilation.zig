@@ -57,8 +57,10 @@ pub const Expression = union(enum) {
 
 const ExpressionType = std.meta.Tag(Expression);
 
-pub fn showExpression(expression: *Expression, out: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator) !void {
-    try std.json.stringify(expression.*, .{ .whitespace = .indent_2 }, out.writer(allocator));
+pub fn showExpression(expression: *Expression, out: *std.Io.Writer) !void {
+    const formatter = std.json.fmt(expression.*, .{ .whitespace = .indent_2 });
+
+    try formatter.format(out);
 }
 
 const analysis = struct {

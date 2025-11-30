@@ -135,7 +135,8 @@ fn execute(self: *Self) Error!void {
 
         if (self.settings.verbose) {
             try self.printStack();
-            try self.printInstruction(instruction);
+            self.printInstruction(instruction)
+                catch @panic("debug write failed");
         }
 
         self.active_frame.?.instruction_offset += 1;
@@ -299,14 +300,14 @@ fn doCall(self: *Self, tail_call: bool, arg_count: u8) Error!void {
 }
 
 fn printStack(self: *Self) !void {
-    std.debug.print("call stack len = {}\n", .{self.call_stack.items.len});
+    //std.debug.print("call stack len = {}\n", .{self.call_stack.items.len});
 
     std.debug.print("stack (len={}) : ", .{self.stack.items.len});
     var i = self.stack.items.len;
     var count: usize = 0;
     while (i != 0 and count < 8) {
         i -= 1;
-        std.debug.print("{} ", .{self.stack.items[i]});
+        std.debug.print("{f} ", .{self.stack.items[i]});
         count += 1;
     }
     std.debug.print("\n", .{});
@@ -315,9 +316,16 @@ fn printStack(self: *Self) !void {
 fn printInstruction(self: *Self, instruction: rt.Instruction) !void {
     const offset = self.active_frame.?.instruction_offset;
 
-    std.debug.print("nexti (off={}): ", .{offset});
-    std.json.stringify(instruction, .{}, std.io.getStdErr().writer()) catch @panic("debug write failed");
-    std.debug.print("\n\n", .{});
+    var buffer: [4096]u8 = undefined;
+    var stderr_fs_writer = std.fs.File.stderr().writer(&buffer);
+    const writer = &stderr_fs_writer.interface;
+
+    const formatter = std.json.fmt(instruction, .{});
+
+    try writer.print("nexti (off={}): ", .{offset});
+    try formatter.format(writer);
+    try writer.print("\n\n", .{});
+    try writer.flush();
 }
 
 pub fn intern(self: *Self, symbol: []const u8) !Value {

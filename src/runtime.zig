@@ -93,10 +93,7 @@ pub const Value = union(enum) {
 
     real_function: *const fn (state: *VM, count: u8) anyerror!void,
 
-    pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: Value, writer: *std.Io.Writer) !void {
         switch (self) {
             .integer => |i| {
                 try writer.print("{}", .{i});
@@ -125,7 +122,7 @@ pub const Value = union(enum) {
 
 pub const ValueType = std.meta.Tag(Value);
 
-fn toJsonStream(lambda: *const LambdaBody, json_writer: anytype) anyerror!void {
+fn toJsonStream(lambda: *const LambdaBody, json_writer: *std.json.Stringify) std.json.Stringify.Error!void {
     try json_writer.beginObject();
 
     try json_writer.objectField("body");
@@ -160,13 +157,19 @@ fn toJsonStream(lambda: *const LambdaBody, json_writer: anytype) anyerror!void {
 }
 
 pub fn dump(lambda: *const LambdaBody) void {
-    const stderr = std.io.getStdErr();
-    const writer = stderr.writer();
-    var json_writer = std.json.writeStream(writer, .{ .whitespace = .indent_2 });
+    const stderr = std.fs.File.stderr();
+    var buffer: [4096]u8 = undefined;
+    var stderr_writer = stderr.writer(&buffer);
+    const writer = &stderr_writer.interface;
 
-    toJsonStream(lambda, &json_writer) catch unreachable;
+    var json_stringify: std.json.Stringify = .{
+        .writer = writer,
+        .options = .{ .whitespace = .indent_2 }
+    };
 
+    toJsonStream(lambda, &json_stringify) catch @panic("debug write failed");
     writer.writeByte('\n') catch unreachable;
+    writer.flush() catch unreachable;
 }
 
 test "basic instruction test" {

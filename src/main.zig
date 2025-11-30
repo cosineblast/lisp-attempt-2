@@ -65,8 +65,8 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const stdin = std.io.getStdIn();
-    var reader = stdin.reader();
+    const stdin = std.fs.File.stdin();
+    var reader = stdin.deprecatedReader();
 
     std.debug.print("lisp attempt 2\n", .{});
 
@@ -87,15 +87,17 @@ pub fn main() !void {
 
         if (verbose) {
             std.debug.print("[REPL] translate ok!\n", .{});
-        }
 
-        var arr = std.ArrayListUnmanaged(u8).empty;
-        defer arr.deinit(base_allocator);
+            std.debug.print("[REPL] translation:\n", .{});
 
-        try compilation.showExpression(expr, &arr, base_allocator);
+            var buffer: [4096]u8 = undefined;
+            var stderr_fwriter = std.fs.File.stderr().writer(&buffer);
+            const writer = &stderr_fwriter.interface;
 
-        if (verbose) {
-            std.debug.print("[REPL] translation:\n{s}\n", .{arr.items});
+            try compilation.showExpression(expr, writer);
+            try writer.print("\n", .{});
+            
+            try writer.flush();
         }
 
         var body = try compilation.compile(expr, base_allocator);
@@ -120,7 +122,7 @@ pub fn main() !void {
             return err;
         };
 
-        std.debug.print("{}", .{result});
+        std.debug.print("{f}", .{result});
     }
 }
 
